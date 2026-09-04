@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher icon: a shield with a person glyph, drawn as a single vector. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Background -->
+    <path
+        android:fillColor="#1A365D"
+        android:pathData="M0,0h108v108h-108z" />
+
+    <!-- Shield outline -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,20L26,31v25c0,17 12,28 28,32c16,-4 28,-15 28,-32V31L54,20z" />
+
+    <!-- Person glyph inside the shield -->
+    <path
+        android:fillColor="#1A365D"
+        android:pathData="M54,42m-8,0a8,8 0,1 0,16 0a8,8 0,1 0,-16 0z" />
+    <path
+        android:fillColor="#1A365D"
+        android:pathData="M54,55c-9,0 -16,5 -16,11v6h32v-6c0,-6 -7,-11 -16,-11z" />
+</vector>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Required to talk to the Identity Guardian content provider. Identity Guardian
+      declares this permission; without it every provider call throws a
+      SecurityException. Note that holding the permission is not enough on its own:
+      the app must also be allowlisted per API URI via StageNow or an EMM.
+    -->
+    <uses-permission android:name="com.zebra.mdna.els.permission.PROVIDER" />
+
+    <!--
+      Android 11+ package visibility filtering hides other apps by default. Declaring
+      the Identity Guardian package makes its provider resolvable from this app.
+    -->
+    <queries>
+        <package android:name="com.zebra.mdna.els" />
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.IdentityGuardianDemo">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.IdentityGuardianDemo">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

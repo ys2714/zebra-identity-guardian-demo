@@ -4,6 +4,7 @@ A simple demo app that shows the basic capabilities of [Zebra Identity Guardian]
 through its **content provider based API**.
 
 Kotlin + Jetpack Compose, one screen, two buttons:
+<img width="270" height="540" alt="Screenshot_20260904_222015" src="https://github.com/user-attachments/assets/04ca403a-6994-41cf-8573-8b85bf641fc3" />
 
 | Button | API | Content URI |
 | --- | --- | --- |

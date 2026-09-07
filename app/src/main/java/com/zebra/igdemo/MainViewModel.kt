@@ -7,10 +7,14 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.zebra.igdemo.ig.AuthenticationScheme
+import com.zebra.igdemo.ig.IdentityGuardianAuthorizer
 import com.zebra.igdemo.ig.IdentityGuardianClient
 import com.zebra.igdemo.ig.IdentityGuardianException
 import com.zebra.igdemo.ig.LaunchFlag
 import com.zebra.igdemo.ig.SessionField
+import com.zebra.igdemo.mx.AccessManager
+import com.zebra.igdemo.zdm.ZdmDelegation
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -51,10 +55,27 @@ sealed interface ApiResult {
     ) : ApiResult
 }
 
+/** Progress of granting this app the Identity Guardian delegation scopes. */
+sealed interface AuthorizationState {
+
+    /** The MX profile and the ZDM token are being applied. */
+    data object InProgress : AuthorizationState
+
+    /** Every Identity Guardian API URI is authorized for this app. */
+    data object Authorized : AuthorizationState
+
+    /**
+     * Authorization failed. The APIs may still work if an administrator staged
+     * the AccessMgr profiles, so the demo actions stay enabled.
+     */
+    data class Failed(val message: String) : AuthorizationState
+}
+
 /** State rendered by the demo screen. */
 data class MainUiState(
     val isBusy: Boolean = false,
     val result: ApiResult? = null,
+    val authorization: AuthorizationState = AuthorizationState.InProgress,
 )
 
 /**
@@ -65,10 +86,41 @@ data class MainUiState(
  */
 class MainViewModel(
     private val client: IdentityGuardianClient,
+    private val authorizer: IdentityGuardianAuthorizer,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
+
+    /** The authorization run in flight, so a retry cannot start a second one. */
+    private var authorizationJob: Job? = null
+
+    init {
+        // Identity Guardian rejects callers without a delegation scope, so the
+        // scopes have to be in place before either button can do anything.
+        authorize()
+    }
+
+    /**
+     * Grants this app the delegation scopes for the Identity Guardian APIs.
+     * Also exposed for the retry action after a failure.
+     */
+    fun authorize() {
+        if (authorizationJob?.isActive == true) return
+
+        authorizationJob = viewModelScope.launch {
+            _uiState.update { it.copy(authorization = AuthorizationState.InProgress) }
+
+            val state = authorizer.authorize().fold(
+                onSuccess = { AuthorizationState.Authorized },
+                onFailure = { error ->
+                    AuthorizationState.Failed(error.message ?: "Authorization failed.")
+                },
+            )
+
+            _uiState.update { it.copy(authorization = state) }
+        }
+    }
 
     /**
      * Calls the Start Authentication API, which brings up the Identity Guardian
@@ -128,14 +180,26 @@ class MainViewModel(
         }
     }
 
+    override fun onCleared() {
+        super.onCleared()
+        // Hand the EMDK session back so the device can tear it down.
+        authorizer.release()
+    }
+
     companion object {
-        /** Supplies the [IdentityGuardianClient] with the application ContentResolver. */
+        /** Builds the client and the authorizer from the application context. */
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val application: Application = checkNotNull(
                     this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY]
                 )
-                MainViewModel(IdentityGuardianClient(application.contentResolver))
+                MainViewModel(
+                    client = IdentityGuardianClient(application.contentResolver),
+                    authorizer = IdentityGuardianAuthorizer(
+                        accessManager = AccessManager(application),
+                        delegation = ZdmDelegation(application.contentResolver),
+                    ),
+                )
             }
         }
     }

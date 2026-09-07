@@ -10,6 +10,12 @@
     <string name="action_start_authentication">Start Authentication</string>
     <string name="action_get_current_session">Get Current User Session</string>
 
+    <!-- MX AccessMgr + ZDM delegation scopes -->
+    <string name="authorization_in_progress">Granting this app the Identity Guardian scopes…</string>
+    <string name="authorization_authorized">Authorized for the Identity Guardian APIs.</string>
+    <string name="authorization_failed">Authorization failed: %1$s</string>
+    <string name="authorization_retry">Retry</string>
+
     <!-- Result card -->
     <string name="result_placeholder">Tap a button to call Identity Guardian.</string>
     <string name="result_status">Status</string>

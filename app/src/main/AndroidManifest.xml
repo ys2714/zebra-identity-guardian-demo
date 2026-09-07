@@ -2,19 +2,34 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-      Required to talk to the Identity Guardian content provider. Identity Guardian
-      declares this permission; without it every provider call throws a
-      SecurityException. Note that holding the permission is not enough on its own:
-      the app must also be allowlisted per API URI via StageNow or an EMM.
+      Declared because the Identity Guardian API docs ask for it. Identity Guardian
+      3.1 does not actually gate its provider on an Android permission (the provider
+      declares no read/write permission); it asks Zebra Device Manager whether the
+      caller holds a delegation scope for the API URI - see IdentityGuardianAuthorizer.
     -->
     <uses-permission android:name="com.zebra.mdna.els.permission.PROVIDER" />
 
     <!--
+      Required to use EMDK, which the app uses to apply the MX AccessMgr profile
+      that allowlists itself as a caller of the Identity Guardian APIs.
+    -->
+    <uses-permission android:name="com.symbol.emdk.permission.EMDK" />
+
+    <!--
+      Required to query Zebra Device Manager's content provider, which issues the
+      delegation token that grants access to the Identity Guardian APIs.
+    -->
+    <uses-permission android:name="com.zebra.devicemanager.provider.READ_PERMISSION" />
+
+    <!--
       Android 11+ package visibility filtering hides other apps by default. Declaring
-      the Identity Guardian package makes its provider resolvable from this app.
+      the Identity Guardian package makes its provider resolvable from this app, and
+      the EMDK service package makes EMDK reachable.
     -->
     <queries>
         <package android:name="com.zebra.mdna.els" />
+        <package android:name="com.symbol.emdk.emdkservice" />
+        <package android:name="com.zebra.devicemanager" />
     </queries>
 
     <application
@@ -23,6 +38,16 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.IdentityGuardianDemo">
+
+        <!--
+          EMDK is a shared library provided by the device, not bundled in the APK
+          (app/libs/emdk-*.jar is compile-only). required="false" keeps the APK
+          installable on non-Zebra devices, where MX allowlisting simply reports
+          that EMDK is unavailable.
+        -->
+        <uses-library
+            android:name="com.symbol.emdk"
+            android:required="false" />
 
         <activity
             android:name=".MainActivity"

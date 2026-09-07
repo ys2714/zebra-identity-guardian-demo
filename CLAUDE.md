@@ -13,6 +13,11 @@
 - Button1: Start Authentication
 - Button2: Get Current User Session
 
+## Allow Caller to Call Service
+
+- sample code to demo Zebra API usage: https://github.com/ys2714/zebra-sdk-kotlin-wrapper
+- please refer to the code at: https://github.com/ys2714/zebra-sdk-kotlin-wrapper/blob/main/emdk_kotlin_wrapper/src/main/java/com/zebra/emdk_kotlin_wrapper/mx/MXProfileProcessor%2BAccessManager.kt the method name: "internal fun MXProfileProcessor.callAccessManagerAllowCallService()"
+
 ## Release Gradle Task
 
 - build the apk and rename it into "zebra-ig-demo-<tag>"

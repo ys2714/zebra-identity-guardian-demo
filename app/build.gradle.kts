@@ -73,6 +73,11 @@ kotlin {
 }
 
 dependencies {
+    // EMDK for Android. The runtime lives on the device (see the uses-library
+    // entry in the manifest), so the jar is only on the compile classpath.
+    compileOnly(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
+    testCompileOnly(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
+
     val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)
     androidTestImplementation(composeBom)

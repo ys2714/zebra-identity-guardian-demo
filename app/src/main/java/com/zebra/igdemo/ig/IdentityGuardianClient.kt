@@ -55,10 +55,21 @@ class IdentityGuardianClient(
             hint = "Confirm Identity Guardian is running and its lock screen is enabled.",
         )
 
-        response.getString(IdentityGuardianContract.KEY_RESULT)
+        val result = response.getString(IdentityGuardianContract.KEY_RESULT)
             ?: throw IdentityGuardianException(
                 message = "Response did not contain a \"${IdentityGuardianContract.KEY_RESULT}\" value.",
             )
+
+        // A missing delegation scope comes back as a plain status string rather
+        // than a SecurityException, so surface it as the failure it is.
+        if (result.contains(IdentityGuardianContract.RESULT_UNAUTHORIZED, ignoreCase = true)) {
+            throw IdentityGuardianException(
+                message = "Identity Guardian rejected the call: $result",
+                hint = AUTHORIZATION_HINT,
+            )
+        }
+
+        result
     }
 
     /**
@@ -78,7 +89,7 @@ class IdentityGuardianClient(
         ).use { cursor ->
             val session = cursor ?: throw IdentityGuardianException(
                 message = "Identity Guardian did not return a cursor for the session query.",
-                hint = "Check that \"v2/currentsession\" is allowlisted for this app.",
+                hint = AUTHORIZATION_HINT,
             )
             session.extras?.getString(IdentityGuardianContract.KEY_RESULT)
         }
@@ -111,9 +122,7 @@ class IdentityGuardianClient(
             Result.failure(
                 IdentityGuardianException(
                     message = "Access to the Identity Guardian provider was denied.",
-                    hint = "Allowlist this app (${IdentityGuardianContract.AUTHORITY}) for this API URI " +
-                        "via StageNow or your EMM, and confirm the " +
-                        "${IdentityGuardianContract.PROVIDER_PERMISSION} permission is granted.",
+                    hint = AUTHORIZATION_HINT,
                     cause = e,
                 )
             )
@@ -135,5 +144,12 @@ class IdentityGuardianClient(
                 )
             )
         }
+    }
+
+    private companion object {
+        /** Shared next step for every "we are not authorized" failure. */
+        const val AUTHORIZATION_HINT = "This app needs a ZDM delegation scope for this API URI: " +
+            "an MX AccessMgr profile naming the URI, plus a ZDM token for it. " +
+            "Retry the in-app authorization, or stage the AccessMgr profile with StageNow/your EMM."
     }
 }

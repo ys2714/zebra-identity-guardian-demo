@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  EMDK profile store. EMDK only forwards a profile to MX when the profile it
+  knows about actually contains MX content: for a profile name it has never seen
+  it creates an empty one, logs "mxPresent = false" and reports success without
+  calling MX. Declaring the profiles here, with the same names and features the
+  app applies at runtime, is what makes the runtime XML reach MX.
+
+  The values below are placeholders; AccessManager overrides them per call.
+-->
+<wap-provisioningdoc>
+  <characteristic type="ProfileInfo">
+    <parm name="created_wizard_version" value="14.0.0"/>
+  </characteristic>
+
+  <characteristic type="Profile">
+    <parm name="ProfileName" value="AccessManagerAllowCallService"/>
+    <characteristic type="AccessMgr" version="15.0">
+      <parm name="OperationMode" value="1"/>
+      <parm name="ServiceAccessAction" value="4"/>
+      <parm name="ServiceIdentifier" value="placeholder"/>
+      <parm name="CallerPackageName" value="placeholder"/>
+      <parm name="CallerSignature" value="placeholder"/>
+    </characteristic>
+  </characteristic>
+
+</wap-provisioningdoc>

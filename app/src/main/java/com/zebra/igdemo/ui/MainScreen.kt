@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -32,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.zebra.igdemo.ApiResult
+import com.zebra.igdemo.AuthorizationState
 import com.zebra.igdemo.IdentityGuardianApi
 import com.zebra.igdemo.MainUiState
 import com.zebra.igdemo.R
@@ -48,6 +50,7 @@ fun MainScreen(
     uiState: MainUiState,
     onStartAuthentication: () -> Unit,
     onGetCurrentSession: () -> Unit,
+    onRetryAuthorization: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -74,15 +77,24 @@ fun MainScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // The delegation scopes have to land before the APIs answer, so the
+            // progress is shown above the actions it unblocks.
+            AuthorizationStatus(
+                state = uiState.authorization,
+                onRetry = onRetryAuthorization,
+            )
+
+            val isAuthorizing = uiState.authorization is AuthorizationState.InProgress
+
             ActionButton(
                 text = stringResource(R.string.action_start_authentication),
-                enabled = !uiState.isBusy,
+                enabled = !uiState.isBusy && !isAuthorizing,
                 onClick = onStartAuthentication,
             )
 
             ActionButton(
                 text = stringResource(R.string.action_get_current_session),
-                enabled = !uiState.isBusy,
+                enabled = !uiState.isBusy && !isAuthorizing,
                 onClick = onGetCurrentSession,
             )
 
@@ -95,6 +107,54 @@ fun MainScreen(
                     .fillMaxWidth()
                     .weight(1f, fill = false),
             )
+        }
+    }
+}
+
+/**
+ * One line describing where authorization got to, with a retry when it failed.
+ *
+ * A failure is not fatal: an administrator may have staged the same AccessMgr
+ * profiles already, so this only informs rather than blocking the demo.
+ */
+@Composable
+private fun AuthorizationStatus(
+    state: AuthorizationState,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        when (state) {
+            AuthorizationState.InProgress -> {
+                CircularProgressIndicator(Modifier.size(16.dp))
+                Text(
+                    text = stringResource(R.string.authorization_in_progress),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            AuthorizationState.Authorized -> Text(
+                text = stringResource(R.string.authorization_authorized),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            is AuthorizationState.Failed -> {
+                Text(
+                    text = stringResource(R.string.authorization_failed, state.message),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onRetry) {
+                    Text(stringResource(R.string.authorization_retry))
+                }
+            }
         }
     }
 }
@@ -251,9 +311,11 @@ private fun MainScreenSuccessPreview() {
                     ),
                     rawResponse = "{\n  \"user_id\": \"jdoe\"\n}",
                 ),
+                authorization = AuthorizationState.Authorized,
             ),
             onStartAuthentication = {},
             onGetCurrentSession = {},
+            onRetryAuthorization = {},
         )
     }
 }
@@ -266,12 +328,16 @@ private fun MainScreenFailurePreview() {
             uiState = MainUiState(
                 result = ApiResult.Failure(
                     api = IdentityGuardianApi.START_AUTHENTICATION,
-                    message = "Access to the Identity Guardian provider was denied.",
-                    hint = "Allowlist this app via StageNow or your EMM.",
+                    message = "Identity Guardian rejected the call: Caller is unauthorized",
+                    hint = "This app needs a ZDM delegation scope for this API URI.",
+                ),
+                authorization = AuthorizationState.Failed(
+                    "EMDK is not available on this device (FAILURE)."
                 ),
             ),
             onStartAuthentication = {},
             onGetCurrentSession = {},
+            onRetryAuthorization = {},
         )
     }
 }

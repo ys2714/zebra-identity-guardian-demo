@@ -26,6 +26,7 @@ class MainActivity : ComponentActivity() {
                     uiState = uiState,
                     onStartAuthentication = { viewModel.startAuthentication() },
                     onGetCurrentSession = { viewModel.getCurrentUserSession() },
+                    onRetryAuthorization = { viewModel.authorize() },
                 )
             }
         }

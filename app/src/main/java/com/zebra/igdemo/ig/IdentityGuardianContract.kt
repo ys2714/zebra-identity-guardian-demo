@@ -45,6 +45,28 @@ object IdentityGuardianContract {
 
     /** Start Authentication input: whether the lock screen blocks device access. */
     const val KEY_LAUNCH_FLAG = "launchflag"
+
+    /**
+     * The delegation scopes this app needs before the APIs above answer, one per
+     * API. Each is used both as the MX AccessMgr `ServiceIdentifier` and as the
+     * ZDM `delegation_scope`.
+     *
+     * The docs list Get Current User Session under its unversioned URI even
+     * though callers query `v2/currentsession`, so both spellings are granted:
+     * an unused scope is harmless, a missing one is not.
+     */
+    val DELEGATION_SCOPES: List<String> = listOf(
+        "content://$AUTHORITY/$METHOD_LOCK_SCREEN_ACTION/$API_START_AUTHENTICATION",
+        "content://$AUTHORITY/currentsession",
+        CURRENT_SESSION_URI.toString(),
+    )
+
+    /**
+     * What the APIs report in [KEY_RESULT] when the caller is not on the
+     * allowlist. Matched case-insensitively on the word alone, because the exact
+     * wording differs between Identity Guardian versions.
+     */
+    const val RESULT_UNAUTHORIZED = "unauthorized"
 }
 
 /**

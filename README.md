@@ -1,152 +1,87 @@
-# zebra-identity-guardian-demo
+# Zebra Identity Guardian Demo
 
-A simple demo app that shows the basic capabilities of [Zebra Identity Guardian](https://techdocs.zebra.com/identityguardian/3-1/api/)
-through its **content provider based API**.
+Two small Android apps that demonstrate the [Zebra Identity Guardian](https://techdocs.zebra.com/identityguardian/3-1/api/)
+**content provider based API**, split the way a shift actually uses it: a crew
+member authenticates, a lead reads back who is signed in.
 
-Kotlin + Jetpack Compose, one screen, two buttons:
-<img width="270" height="540" alt="Screenshot_20260904_222015" src="https://github.com/user-attachments/assets/04ca403a-6994-41cf-8573-8b85bf641fc3" />
+Kotlin + Jetpack Compose, one screen each, one API each.
 
-| Button | API | Content URI |
-| --- | --- | --- |
-| **Start Authentication** | Start Authentication | `content://com.zebra.mdna.els.provider/` (via `ContentResolver.call`) |
-| **Get Current User Session** | Get Current User Session (v2) | `content://com.zebra.mdna.els.provider/v2/currentsession` |
+| App | Folder | Application ID | API it calls | Content URI |
+| --- | --- | --- | --- | --- |
+| **IG Crew** | [`crew-app/`](crew-app) | `com.zebra.igcrew` | Start Authentication, Verification 3 (`authenticationScheme3`) | `content://com.zebra.mdna.els.provider/` via `ContentResolver.call("lockscreenaction", "startauthentication")` |
+| **IG Lead** | [`lead-app/`](lead-app) | `com.zebra.iglead` | Get Current User Session (v2) | `content://com.zebra.mdna.els.provider/v2/currentsession` via `ContentResolver.query()` |
 
-Whatever Identity Guardian returns — the `RESULT` status, the parsed session
-fields, the raw JSON, or the error and a hint about how to fix it — is rendered
-in the result card below the buttons.
+The application IDs differ, so both install side by side on the same device.
+Each is a self-contained Gradle project — open either folder in Android Studio.
 
-## How the API is called
+## crew-app — Start Authentication
 
-Both APIs go through the `com.zebra.mdna.els.provider` content provider, but in
-two different ways:
+One button. Tapping it calls Start Authentication with
+`user_verification=authenticationScheme3` (labelled *Verification 3* in the
+Identity Guardian configuration) and `launchflag=blocking`, which brings up the
+Identity Guardian lock screen. When Identity Guardian answers `RESULT=SUCCESS`
+the screen shows **Authentication succeeded.**; `IN_PROGRESS`, `BUSY`, `ERROR`,
+an unrecognised status or a failed call are each reported with what came back.
 
-- **Start Authentication** uses `ContentResolver.call()`, with `lockscreenaction`
-  as the *method* and `startauthentication` as the *arg*. The input Bundle carries
-  `user_verification` (the authentication scheme) and `launchflag` (`blocking` or
-  `unblocking`). The response Bundle's `RESULT` is one of `SUCCESS`,
-  `IN_PROGRESS`, `BUSY` or `ERROR`.
-- **Get Current User Session** uses `ContentResolver.query()`. The payload does
-  *not* come back as cursor rows — it is a stringified JSON object in the
-  cursor's `extras` under the `RESULT` key.
+`RESULT` describes the lock screen Identity Guardian put up, not the credentials
+the user then types into it — reading back who ended up signed in is lead-app's
+job.
 
-See `app/src/main/java/com/zebra/igdemo/ig/` for the client and the constants.
+## lead-app — Get Current User Session
 
-## Authorizing itself as a caller
+A login form. On launch the app calls Get Current User Session once and fills
+**User** from the session's `user_id` and **Role** from its `user_role`, both
+drawn in red to show they came from Identity Guardian. **Password** is the one
+field the session does not supply, and **Login** is local to the demo: it checks
+the form is complete and reports who would be signed in. No credential leaves
+the app.
+
+## What both apps have to do first
 
 Identity Guardian does **not** gate its provider on an Android permission. Its
-provider asks Zebra Device Manager (ZDM) whether the caller holds a *delegation
-scope* for the API URI being called; without one it answers `Caller is
-unauthorized` and logs:
+provider asks Zebra Device Manager whether the caller holds a *delegation scope*
+for the API URI being called, and answers `Caller is unauthorized` without one.
 
-```
-SecurityHelper: zdm call
-RESULT: : Delegation scoped is not granted
-ELS-ZBAContentProvider: Caller is unauthorized
-```
+Each app grants itself that scope on launch, in two steps — an MX AccessMgr
+*AllowCaller* profile applied through EMDK (this package + signature may call
+the service named by the URI), then a ZDM delegation token for the same URI.
+A scope is granted per calling package, so each app does this for the one API it
+calls. An administrator can equally stage the same profiles with StageNow or an
+EMM; the in-app attempt is then redundant but harmless.
 
-The demo grants itself that scope on launch, in the two steps Zebra's delegation
-model needs, and shows the outcome in the status line above the buttons:
-
-1. **MX AccessMgr profile** (`com.zebra.igdemo.mx.AccessManager`, applied through
-   EMDK) — allows this package + signature to call the service named by the URI:
-
-   | Parameter | Value |
-   | --- | --- |
-   | `OperationMode` | `1` (Single User without Whitelist) |
-   | `ServiceAccessAction` | `4` (AllowCaller) |
-   | `ServiceIdentifier` | one API URI, e.g. `content://com.zebra.mdna.els.provider/lockscreenaction/startauthentication` |
-   | `CallerPackageName` | this app's package |
-   | `CallerSignature` | Base64 of this app's signing certificate, read at runtime |
-
-   `CallerSignature` is the same certificate StageNow asks you to export with
-   `SigTools.jar getcert`; the app reads it from its own `PackageInfo` instead.
-
-2. **ZDM delegation token** (`com.zebra.igdemo.zdm.ZdmDelegation`) — queries
-   `content://com.zebra.devicemanager.zdmcontentprovider/AcquireToken` with
-   `delegation_scope=<the same URI>`. Step 1 only *permits* asking for the token;
-   this call is what records the delegation Identity Guardian then finds. It needs
-   `com.zebra.devicemanager.provider.READ_PERMISSION` (protection level `normal`).
-
-Three things about step 1 are easy to get wrong, and each one fails *silently*:
-
-- **The profile must be declared in `app/src/main/assets/EMDKConfig.xml`.** For a
-  profile name it has never seen, EMDK creates an empty one, logs
-  `createProfile - mxPresent = false` and returns `SUCCESS` **without ever calling
-  MX**. With the profile declared, MX answers `CHECK_XML` and echoes back the
-  AccessMgr characteristic it applied. While it was silently skipped, MX also
-  "succeeded" for `ServiceAccessAction=99` and for a made-up CSP name — so a
-  `SUCCESS` from EMDK alone proves nothing.
-- **`ServiceIdentifier` is stored verbatim, not split on commas.** Despite the CSP
-  docs describing it as a comma-separated list, passing `a,b,c` allowlists a
-  single service literally named `a,b,c`. The demo applies one profile per URI.
-- **Use a current CSP version.** The profile declares
-  `<characteristic type="AccessMgr" version="15.0">`, matching
-  `assets/dsd/AccessMgr.dsd` in `com.symbol.mxmf` on the device.
-
-The profile XML lives in `app/src/main/assets/profile_access_manager_allow_call_service.xml`
-and the EMDK plumbing in `app/src/main/java/com/zebra/igdemo/mx/`, modelled on
-[zebra-sdk-kotlin-wrapper](https://github.com/ys2714/zebra-sdk-kotlin-wrapper)'s
-`callAccessManagerAllowCallService()`.
-
-Note that `OperationMode = 1` turns app install/launch whitelisting *off* on the
-device, which is what the reference profile does. Set it to `0` ("do not
-change") in the asset if the device's whitelisting policy must stay untouched.
-
-An administrator can of course still stage the same AccessMgr profiles with
-StageNow or an EMM; the app's own attempt is then redundant but harmless.
+[`lead-app/README.md`](lead-app/README.md) documents this in full, including
+three ways the MX step fails *silently* and how to tell it actually worked.
 
 ## Device prerequisites
 
-The demo only works on a Zebra device with Identity Guardian installed and
-configured, plus EMDK and Zebra Device Manager on the device for the
-authorization step. It needs:
+A Zebra device with Identity Guardian installed and configured (Verification 3
+set up, for crew-app), plus EMDK and Zebra Device Manager on the device for the
+authorization step. Verified on an EM45 (Android 15) with Identity Guardian
+3.1.000.1204, EMDK 15.0.82 and MX 15.2.0.10.
 
-1. The permissions declared in the manifest:
-   `com.symbol.emdk.permission.EMDK` (apply the MX profile),
-   `com.zebra.devicemanager.provider.READ_PERMISSION` (acquire the ZDM token)
-   and `com.zebra.mdna.els.permission.PROVIDER` (asked for by the IG docs).
-2. The delegation scopes described above. The app grants them itself on launch;
-   an administrator can equally stage the AccessMgr profiles with StageNow or an
-   EMM.
-
-Verified on an EM45 (Android 15) with Identity Guardian 3.1.000.1204, EMDK
-15.0.82 and MX 15.2.0.10.
-
-EMDK is a device-provided shared library: `app/libs/emdk-9.1.1.jar` is on the
-compile classpath only (`compileOnly`) and the manifest declares
-`<uses-library android:name="com.symbol.emdk" android:required="false" />`, so
-the APK still installs on non-Zebra devices — it just reports that EMDK is
-unavailable instead of allowlisting.
+EMDK is a device-provided shared library, so the APKs still install on non-Zebra
+devices — they just report that EMDK is unavailable instead of allowlisting.
 
 ## Building
 
-```bash
-./gradlew assembleDebug
-```
-
 Requires JDK 17+ (Android Studio's bundled JBR works) and the Android SDK; set
-`sdk.dir` in `local.properties`.
-
-## Releasing
-
-`releaseApk` builds the release variant, signs it, renames it to
-`zebra-ig-demo-<tag>.apk` using `git describe --tags --always`, and copies it to
-the project root:
+`sdk.dir` in each project's `local.properties`.
 
 ```bash
-./gradlew releaseApk
+cd lead-app  && ./gradlew assembleDebug testDebugUnitTest
+cd ../crew-app && ./gradlew assembleDebug testDebugUnitTest
 ```
 
-Signing credentials are read from `keystore.properties`, which is git-ignored.
-Copy `keystore.properties.template` to `keystore.properties` and create the
-keystore with the `keytool` command documented in that template — the key alias
-is `zebra-ig-demo-key`. Debug builds work without it.
+`./gradlew releaseApk` in either folder builds the signed release variant,
+renames it to `zebra-ig-lead-demo-<tag>.apk` / `zebra-ig-crew-demo-<tag>.apk`
+using `git describe --tags --always`, and copies it to that project's root.
+Both sign with the same release key (`zebra-ig-demo-key`), so the pair shares
+one `CallerSignature`; credentials come from the git-ignored
+`keystore.properties` described in each project's `keystore.properties.template`.
 
-## Tests
+## Trying the pair
 
-```bash
-./gradlew testDebugUnitTest
-```
-
-Covers the parsing of the session JSON payload (`UserSessionTest`) and the MX
-profile placeholder substitution (`MxProfileTemplateTest`).
+1. Install both APKs on the device.
+2. Open **IG Crew**, tap *Start Authentication*, and sign in on the Identity
+   Guardian lock screen.
+3. Open **IG Lead** — the form comes up carrying that user and role.

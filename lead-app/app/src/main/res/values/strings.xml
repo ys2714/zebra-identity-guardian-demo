@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">IG Lead</string>
+
+    <!-- Login form -->
+    <string name="label_user">User :</string>
+    <string name="label_password">Password :</string>
+    <string name="label_role">Role :</string>
+    <string name="value_missing">—</string>
+    <string name="action_login">Login</string>
+
+    <!-- Get Current User Session -->
+    <string name="session_loading">Reading the Identity Guardian session…</string>
+    <string name="session_none">No active Identity Guardian session.</string>
+    <string name="session_failed">Could not read the session: %1$s</string>
+    <string name="session_hint">Hint: %1$s</string>
+
+    <!-- MX AccessMgr + ZDM delegation scopes -->
+    <string name="authorization_in_progress">Granting this app the Identity Guardian scopes…</string>
+    <string name="authorization_failed">Authorization failed: %1$s</string>
+    <string name="action_retry">Retry</string>
+
+    <!-- Login outcome -->
+    <string name="login_signed_in">Signed in as %1$s (%2$s).</string>
+    <string name="login_no_user">No Identity Guardian user to log in as.</string>
+    <string name="login_password_required">Enter the password.</string>
+</resources>

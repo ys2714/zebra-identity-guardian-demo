@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MX AccessMgr profile that allowlists one caller for one callable service.
+
+  Reference: https://techdocs.zebra.com/mx/accessmgr/
+
+  MxProfileTemplate fills in the placeholder values below at runtime:
+    ServiceIdentifier  - the service being called, i.e. an Identity Guardian API URI
+    CallerPackageName  - the package allowed to call it (this app)
+    CallerSignature    - Base64 of this app's signing certificate
+
+  OperationMode  1 = Single User without Whitelist (app install/launch whitelisting off)
+  ServiceAccessAction  4 = AllowCaller, "allows the specified app(s) to call a specified service"
+-->
+<wap-provisioningdoc>
+    <characteristic type="Profile">
+        <parm name="ProfileName" value="AccessManagerAllowCallService" />
+        <characteristic type="AccessMgr" version="15.0" >
+            <parm name="OperationMode" value="1" />
+            <parm name="ServiceAccessAction" value="4" />
+            <parm name="ServiceIdentifier" value="=[ServiceIdentifier]" />
+            <parm name="CallerPackageName" value="=[CallerPackageName]" />
+            <parm name="CallerSignature" value="=[CallerSignature]" />
+        </characteristic>
+    </characteristic>
+</wap-provisioningdoc>

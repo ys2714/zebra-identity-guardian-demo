@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Compose draws the real UI; this theme only covers the window background and
+      the splash frame before the first composition.
+    -->
+    <style name="Theme.IdentityGuardianCrew" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

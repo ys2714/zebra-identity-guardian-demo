@@ -54,9 +54,12 @@ object IdentityGuardianContract {
      * The docs list Get Current User Session under its unversioned URI even
      * though callers query `v2/currentsession`, so both spellings are granted:
      * an unused scope is harmless, a missing one is not.
+     *
+     * Start Authentication is deliberately absent. This app never calls it -
+     * that is crew-app's job - and every scope here costs an MX profile
+     * submission, which is the slowest and least reliable part of start-up.
      */
     val DELEGATION_SCOPES: List<String> = listOf(
-        "content://$AUTHORITY/$METHOD_LOCK_SCREEN_ACTION/$API_START_AUTHENTICATION",
         "content://$AUTHORITY/currentsession",
         CURRENT_SESSION_URI.toString(),
     )

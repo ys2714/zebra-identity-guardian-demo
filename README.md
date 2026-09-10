@@ -78,12 +78,26 @@ Identity Guardian does **not** gate its provider on an Android permission. Its
 provider asks Zebra Device Manager whether the caller holds a *delegation scope*
 for the API URI being called, and answers `Caller is unauthorized` without one.
 
-Each app grants itself those scopes on launch, in two steps — an MX AccessMgr
+Each app can grant itself those scopes, in two steps — an MX AccessMgr
 *AllowCaller* profile applied through EMDK (this package + signature may call
 the service named by the URI), then a ZDM delegation token for the same URI.
 A scope is granted per calling package and per API URI, so each app does this
 for every API it calls. An administrator can equally stage the same profiles
-with StageNow or an EMM; the in-app attempt is then redundant but harmless.
+with StageNow or an EMM.
+
+**This runs only when Identity Guardian actually refuses a call.** Each app tries
+its API first and does the MX/ZDM work solely on a `Caller is unauthorized`
+answer. On a device where the scope is already in place — staged by an
+administrator, or granted by an earlier run — nothing touches EMDK at all and
+start-up is immediate.
+
+That ordering matters more than it sounds. The MX step depends on the device's
+MX framework service (`com.symbol.mxmf`), and that service can end up in a state
+where it never answers a submission: EMDK logs `Submitting XML to MXMF` and
+nothing follows. Doing the grant up front meant every launch waited on that, and
+then reported a failure for a step it had not needed. If you do see the
+authorization step time out, the profiles can be staged with StageNow or your
+EMM instead; a device reboot often clears the MX service too.
 
 [`lead-app/README.md`](lead-app/README.md) documents this in full, including
 three ways the MX step fails *silently* and how to tell it actually worked.

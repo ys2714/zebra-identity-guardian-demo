@@ -9,6 +9,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.zebra.iglead.ig.IdentityGuardianAuthorizer
 import com.zebra.iglead.ig.IdentityGuardianClient
 import com.zebra.iglead.ig.IdentityGuardianException
+import com.zebra.iglead.ig.UserSession
+import com.zebra.iglead.ig.needsAuthorization
 import com.zebra.iglead.mx.AccessManager
 import com.zebra.iglead.zdm.ZdmDelegation
 import kotlinx.coroutines.Job
@@ -21,6 +23,16 @@ import kotlinx.coroutines.launch
 /** Progress of granting this app the Identity Guardian delegation scopes. */
 sealed interface AuthorizationState {
 
+    /**
+     * Never needed. The API answered without it, because an administrator staged
+     * the AccessMgr profile or an earlier run already granted the scope.
+     *
+     * This is the normal state on a configured device, which is why the app no
+     * longer does the MX/ZDM work up front: it is slow, it depends on a device
+     * service that can be wedged, and most of the time it changes nothing.
+     */
+    data object NotAttempted : AuthorizationState
+
     /** The MX profile and the ZDM token are being applied. */
     data object InProgress : AuthorizationState
 
@@ -28,8 +40,9 @@ sealed interface AuthorizationState {
     data object Authorized : AuthorizationState
 
     /**
-     * Authorization failed. The API may still answer if an administrator staged
-     * the AccessMgr profile, so the session read is attempted regardless.
+     * Authorization failed. Only worth showing when the API call it was meant to
+     * unblock also failed - if the call then worked, the scope was already there
+     * and this is noise.
      */
     data class Failed(val message: String) : AuthorizationState
 }
@@ -118,7 +131,7 @@ data class MainUiState(
     val role: String = "",
     val password: String = "",
     val sessionStatus: SessionStatus = SessionStatus.Loading,
-    val authorization: AuthorizationState = AuthorizationState.InProgress,
+    val authorization: AuthorizationState = AuthorizationState.NotAttempted,
     val access: AccessState = AccessState.Undecided,
     val login: LoginState = LoginState.Idle,
 )
@@ -152,8 +165,17 @@ class MainViewModel(
     }
 
     /**
-     * Grants the delegation scope, then reads the current session into the form.
-     * Also exposed as the retry action after either step fails.
+     * Reads the current session into the form, granting the delegation scope
+     * first only if Identity Guardian actually refuses the call.
+     *
+     * The scope is usually already in place - staged by an administrator, or
+     * granted by an earlier run - so doing the MX/ZDM work up front made every
+     * launch wait on it for nothing. Worse, it is EMDK and MX that the wait
+     * depends on: when the device's MX framework service is not answering, the
+     * profile submission simply never completes, and the app used to sit behind
+     * that for the full timeout and then show a failure for a step it did not
+     * need. Asking Identity Guardian first is both faster and honest about
+     * whether authorization was required at all.
      */
     fun start() {
         if (sessionJob?.isActive == true) return
@@ -161,10 +183,22 @@ class MainViewModel(
         sessionJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
-                    authorization = AuthorizationState.InProgress,
+                    authorization = AuthorizationState.NotAttempted,
                     sessionStatus = SessionStatus.Loading,
                 )
             }
+
+            val session = client.getCurrentUserSession()
+
+            // Anything other than "you have no delegation scope" is a failure
+            // the MX/ZDM work would not fix, so don't spend time on it.
+            val refused = session.exceptionOrNull()?.needsAuthorization() == true
+            if (!refused) {
+                apply(session)
+                return@launch
+            }
+
+            _uiState.update { it.copy(authorization = AuthorizationState.InProgress) }
 
             val authorization = authorizer.authorize().fold(
                 onSuccess = { AuthorizationState.Authorized },
@@ -175,9 +209,9 @@ class MainViewModel(
 
             _uiState.update { it.copy(authorization = authorization) }
 
-            // A failure here is not fatal: the scope may already be staged, so
-            // the session read is worth attempting either way.
-            loadSession()
+            // Worth retrying even if authorize() reported a failure: it applies
+            // several profiles and only one of them has to have landed.
+            apply(client.getCurrentUserSession())
         }
     }
 
@@ -193,13 +227,13 @@ class MainViewModel(
 
         sessionJob = viewModelScope.launch {
             _uiState.update { it.copy(sessionStatus = SessionStatus.Loading) }
-            loadSession()
+            apply(client.getCurrentUserSession())
         }
     }
 
-    /** Calls Get Current User Session (v2) and copies the user and role into the form. */
-    private suspend fun loadSession() {
-        client.getCurrentUserSession().fold(
+    /** Copies a Get Current User Session result into the form and the role gate. */
+    private fun apply(result: Result<UserSession>) {
+        result.fold(
             onSuccess = { session ->
                 val role = session.userRole.orEmpty()
                 val signedIn = session.isSignedIn

@@ -13,6 +13,7 @@ import com.zebra.igcrew.ig.IdentityGuardianAuthorizer
 import com.zebra.igcrew.ig.IdentityGuardianClient
 import com.zebra.igcrew.ig.IdentityGuardianException
 import com.zebra.igcrew.ig.LaunchFlag
+import com.zebra.igcrew.ig.needsAuthorization
 import com.zebra.igcrew.mx.AccessManager
 import com.zebra.igcrew.zdm.ZdmDelegation
 import kotlinx.coroutines.Job
@@ -22,18 +23,29 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** Progress of granting this app the Identity Guardian delegation scope. */
+/** Progress of granting this app the Identity Guardian delegation scopes. */
 sealed interface AuthorizationState {
+
+    /**
+     * Never needed. The APIs answered without it, because an administrator
+     * staged the AccessMgr profile or an earlier run already granted the scopes.
+     *
+     * This is the normal state on a configured device, which is why the app no
+     * longer does the MX/ZDM work up front: it is slow, it depends on a device
+     * service that can be wedged, and most of the time it changes nothing.
+     */
+    data object NotAttempted : AuthorizationState
 
     /** The MX profile and the ZDM token are being applied. */
     data object InProgress : AuthorizationState
 
-    /** The Start Authentication URI is authorized for this app. */
+    /** The Identity Guardian API URIs are authorized for this app. */
     data object Authorized : AuthorizationState
 
     /**
-     * Authorization failed. The API may still answer if an administrator staged
-     * the AccessMgr profile, so the button stays enabled.
+     * Authorization failed. Only worth showing when the call it was meant to
+     * unblock also failed - if the call then worked, the scope was already there
+     * and this is noise.
      */
     data class Failed(val message: String) : AuthorizationState
 }
@@ -119,7 +131,7 @@ internal fun statusPhase(result: AuthenticationResult): AuthenticationPhase? = w
 
 /** State rendered by the crew screen. */
 data class MainUiState(
-    val authorization: AuthorizationState = AuthorizationState.InProgress,
+    val authorization: AuthorizationState = AuthorizationState.NotAttempted,
     val phase: AuthenticationPhase = AuthenticationPhase.Idle,
 ) {
     /**
@@ -170,40 +182,45 @@ class MainViewModel(
     private var resumedWhileStarting = false
 
     init {
-        // Identity Guardian rejects callers without a delegation scope, so the
-        // scope has to be in place before either API can do anything.
-        authorize(autoStart = true)
+        // Authentication is supposed to begin as soon as the app opens, and the
+        // delegation scope is usually already in place, so go straight at it.
+        // authorize() is the fallback for when Identity Guardian says no.
+        hasAutoStarted = true
+        startAuthentication()
     }
 
     /**
      * Grants this app the delegation scopes for the two APIs it calls.
      *
-     * @param autoStart whether to go straight into authenticating once the scopes
-     * are in place. Authentication is supposed to begin as soon as the app opens,
-     * and this is the earliest point at which Identity Guardian would accept it.
+     * Not called up front any more: it is slow, it depends on EMDK and the
+     * device's MX framework service, and on a configured device it changes
+     * nothing. When that service is not answering the profile submission never
+     * completes, which used to hold the whole app behind it for the full timeout
+     * and then report a failure for a step it did not need. Now it runs only
+     * when Identity Guardian actually refuses a call, and as the retry action.
      */
-    fun authorize(autoStart: Boolean = false) {
+    fun authorize() {
         if (authorizationJob?.isActive == true) return
 
         authorizationJob = viewModelScope.launch {
-            _uiState.update { it.copy(authorization = AuthorizationState.InProgress) }
-
-            val state = authorizer.authorize().fold(
-                onSuccess = { AuthorizationState.Authorized },
-                onFailure = { error ->
-                    AuthorizationState.Failed(error.message ?: "Authorization failed.")
-                },
-            )
-
-            _uiState.update { it.copy(authorization = state) }
-
-            // Even a failure is worth starting after: an administrator may have
-            // staged the same profile, in which case the APIs answer anyway.
-            if (autoStart && !hasAutoStarted) {
-                hasAutoStarted = true
-                startAuthentication()
-            }
+            authorizeNow()
+            // Retrying by hand means the user wants another go at the real thing.
+            startAuthentication()
         }
+    }
+
+    /** Applies the MX profile and takes the ZDM tokens, reporting how it went. */
+    private suspend fun authorizeNow() {
+        _uiState.update { it.copy(authorization = AuthorizationState.InProgress) }
+
+        val state = authorizer.authorize().fold(
+            onSuccess = { AuthorizationState.Authorized },
+            onFailure = { error ->
+                AuthorizationState.Failed(error.message ?: "Authorization failed.")
+            },
+        )
+
+        _uiState.update { it.copy(authorization = state) }
     }
 
     /**
@@ -226,7 +243,17 @@ class MainViewModel(
             resumedWhileStarting = false
             _uiState.update { it.copy(phase = AuthenticationPhase.Starting) }
 
-            val phase = client.startAuthentication(scheme, launchFlag).fold(
+            var launch = client.startAuthentication(scheme, launchFlag)
+
+            // Refused for want of a delegation scope is the one failure this app
+            // can fix, so take the scope and try once more. Every other failure
+            // would not be helped by it.
+            if (launch.exceptionOrNull()?.needsAuthorization() == true) {
+                authorizeNow()
+                launch = client.startAuthentication(scheme, launchFlag)
+            }
+
+            val phase = launch.fold(
                 onSuccess = ::launchPhase,
                 onFailure = { error ->
                     AuthenticationPhase.Done(

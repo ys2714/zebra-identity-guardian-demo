@@ -10,12 +10,21 @@ import kotlinx.coroutines.withContext
  * Something went wrong talking to Identity Guardian.
  *
  * @param hint an actionable next step for the operator, when one is known.
+ * @param needsAuthorization true when the call was refused for want of a
+ * delegation scope, which is the one failure this app can do something about.
+ * It is what tells the caller the MX/ZDM work is worth attempting; every other
+ * failure would not be helped by it.
  */
 class IdentityGuardianException(
     message: String,
     val hint: String? = null,
+    val needsAuthorization: Boolean = false,
     cause: Throwable? = null,
 ) : Exception(message, cause)
+
+/** True when [this] failed for want of a delegation scope. */
+internal fun Throwable.needsAuthorization(): Boolean =
+    (this as? IdentityGuardianException)?.needsAuthorization == true
 
 /**
  * What Start Authentication or Get Authentication Status answered.
@@ -83,6 +92,7 @@ class IdentityGuardianClient(
             throw IdentityGuardianException(
                 message = "Identity Guardian rejected the call: $result",
                 hint = AUTHORIZATION_HINT,
+                needsAuthorization = true,
             )
         }
 
@@ -114,6 +124,7 @@ class IdentityGuardianClient(
             val status = cursor ?: throw IdentityGuardianException(
                 message = "Identity Guardian did not return a cursor for the status query.",
                 hint = AUTHORIZATION_HINT,
+                needsAuthorization = true,
             )
             status.extras?.getString(IdentityGuardianContract.KEY_RESULT)
         } ?: throw IdentityGuardianException(
@@ -126,6 +137,7 @@ class IdentityGuardianClient(
             throw IdentityGuardianException(
                 message = "Identity Guardian rejected the status query: $result",
                 hint = AUTHORIZATION_HINT,
+                needsAuthorization = true,
             )
         }
 
@@ -149,6 +161,7 @@ class IdentityGuardianClient(
                 IdentityGuardianException(
                     message = "Access to the Identity Guardian provider was denied.",
                     hint = AUTHORIZATION_HINT,
+                    needsAuthorization = true,
                     cause = e,
                 )
             )

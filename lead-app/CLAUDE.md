@@ -31,6 +31,19 @@
 - diagnostic text coming out of EMDK / MX / ZDM / the provider is not localized;
   only the wrapper around it is
 
+## Authorizing only on demand
+
+- the session read happens **first**; the MX/ZDM grant runs only if Identity
+  Guardian answers `Caller is unauthorized`. On a configured device nothing
+  touches EMDK and start-up is immediate
+- the MX step depends on `com.symbol.mxmf`, which can stop answering submissions
+  entirely (EMDK logs "Submitting XML to MXMF" and goes quiet), so it must never
+  gate an API call that would have worked
+- an authorization failure is only shown when the session read also failed;
+  otherwise the scope was already there and the message would be noise
+- Start Authentication is **not** in this app's delegation scopes: it never calls
+  it, and each scope costs an MX profile submission
+
 ## Reading the v2 session payload
 
 - the app queries `v2/currentsession`, whose payload is camelCase and **nested**:

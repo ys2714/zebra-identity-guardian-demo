@@ -286,15 +286,23 @@ private fun StatusArea(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         when (val authorization = uiState.authorization) {
+            AuthorizationState.NotAttempted -> Unit
+
             AuthorizationState.InProgress ->
                 ProgressStatus(stringResource(R.string.authorization_in_progress))
 
             AuthorizationState.Authorized -> Unit
 
-            is AuthorizationState.Failed -> StatusText(
-                text = stringResource(R.string.authorization_failed, authorization.message),
-                color = MaterialTheme.colorScheme.error,
-            )
+            // Only worth saying when the session read it was meant to unblock
+            // failed too. If the read then worked, the scope was already in
+            // place and this would just be alarming for no reason.
+            is AuthorizationState.Failed ->
+                if (uiState.sessionStatus is SessionStatus.Failed) {
+                    StatusText(
+                        text = stringResource(R.string.authorization_failed, authorization.message),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
         }
 
         when (val session = uiState.sessionStatus) {
@@ -333,9 +341,9 @@ private fun StatusArea(
             )
         }
 
-        val canRetry = uiState.authorization is AuthorizationState.Failed ||
-            uiState.sessionStatus is SessionStatus.Failed
-        if (canRetry) {
+        // Keyed off the session read alone: an authorization failure that left a
+        // working session read is not something the user needs to retry.
+        if (uiState.sessionStatus is SessionStatus.Failed) {
             TextButton(onClick = onRetry) {
                 Text(stringResource(R.string.action_retry))
             }

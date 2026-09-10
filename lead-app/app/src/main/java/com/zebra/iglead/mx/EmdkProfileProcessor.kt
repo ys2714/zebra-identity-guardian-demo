@@ -276,8 +276,16 @@ class EmdkProfileProcessor(
         }
 
     private companion object {
-        /** EMDK usually answers in well under a second; this is only a safety net. */
-        const val EMDK_OPEN_TIMEOUT_MS = 15_000L
-        const val PROFILE_TIMEOUT_MS = 30_000L
+        /**
+         * EMDK usually answers in well under a second, so these only bound the
+         * pathological case - and they are deliberately short.
+         *
+         * The device's MX framework service (`com.symbol.mxmf`) can end up in a
+         * state where it never answers a submission at all: EMDK logs
+         * "Submitting XML to MXMF" and nothing follows. Authorization is
+         * best-effort, so failing fast beats making the user wait.
+         */
+        const val EMDK_OPEN_TIMEOUT_MS = 8_000L
+        const val PROFILE_TIMEOUT_MS = 10_000L
     }
 }

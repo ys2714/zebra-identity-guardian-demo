@@ -244,6 +244,9 @@ private fun AuthorizationStatus(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         when (state) {
+            // Never needed: the scope was already in place. Nothing to report.
+            AuthorizationState.NotAttempted -> Unit
+
             AuthorizationState.InProgress -> Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

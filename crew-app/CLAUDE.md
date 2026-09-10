@@ -50,6 +50,12 @@
 - please refer to the code at: https://github.com/ys2714/zebra-sdk-kotlin-wrapper/blob/main/emdk_kotlin_wrapper/src/main/java/com/zebra/emdk_kotlin_wrapper/mx/MXProfileProcessor%2BAccessManager.kt the method name: "internal fun MXProfileProcessor.callAccessManagerAllowCallService()"
 - two delegation scopes are needed: the Start Authentication URI and the Get
   Authentication Status URI
+- this runs **only** when Identity Guardian answers `Caller is unauthorized`, not
+  up front. The MX step depends on `com.symbol.mxmf`, which can stop answering
+  submissions entirely (EMDK logs "Submitting XML to MXMF" and goes quiet), so it
+  must never be a gate in front of an API that would have worked
+- EMDK timeouts are deliberately short (8s open / 10s per profile): the step is
+  best-effort, so failing fast beats making the user wait
 
 ## Release Gradle Task
 

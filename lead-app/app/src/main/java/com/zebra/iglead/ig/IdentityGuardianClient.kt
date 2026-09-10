@@ -11,12 +11,21 @@ import org.json.JSONException
  * Something went wrong talking to Identity Guardian.
  *
  * @param hint an actionable next step for the operator, when one is known.
+ * @param needsAuthorization true when the call was refused for want of a
+ * delegation scope, which is the one failure this app can do something about.
+ * It is what tells the caller the MX/ZDM work is worth attempting; every other
+ * failure would not be helped by it.
  */
 class IdentityGuardianException(
     message: String,
     val hint: String? = null,
+    val needsAuthorization: Boolean = false,
     cause: Throwable? = null,
 ) : Exception(message, cause)
+
+/** True when [this] failed for want of a delegation scope. */
+internal fun Throwable.needsAuthorization(): Boolean =
+    (this as? IdentityGuardianException)?.needsAuthorization == true
 
 /**
  * Thin wrapper over the Identity Guardian content provider API.
@@ -66,6 +75,7 @@ class IdentityGuardianClient(
             throw IdentityGuardianException(
                 message = "Identity Guardian rejected the call: $result",
                 hint = AUTHORIZATION_HINT,
+                needsAuthorization = true,
             )
         }
 
@@ -90,6 +100,7 @@ class IdentityGuardianClient(
             val session = cursor ?: throw IdentityGuardianException(
                 message = "Identity Guardian did not return a cursor for the session query.",
                 hint = AUTHORIZATION_HINT,
+                needsAuthorization = true,
             )
             session.extras?.getString(IdentityGuardianContract.KEY_RESULT)
         }
@@ -123,6 +134,7 @@ class IdentityGuardianClient(
                 IdentityGuardianException(
                     message = "Access to the Identity Guardian provider was denied.",
                     hint = AUTHORIZATION_HINT,
+                    needsAuthorization = true,
                     cause = e,
                 )
             )

@@ -9,14 +9,19 @@
     CallerPackageName  - the package allowed to call it (this app)
     CallerSignature    - Base64 of this app's signing certificate
 
-  OperationMode  1 = Single User without Whitelist (app install/launch whitelisting off)
+  OperationMode  0 = Do not change. This parm is the on/off switch for app
+    install/launch whitelisting, which has nothing to do with calling a service
+    and is not one of the four parms AllowCaller requires. Sending 1 ("Single
+    User without Whitelist") asked MX to change that device-wide mode, and MXMF
+    never answered the submission - EMDK logged "Submitting XML to MXMF" and
+    went quiet until the caller timed out.
   ServiceAccessAction  4 = AllowCaller, "allows the specified app(s) to call a specified service"
 -->
 <wap-provisioningdoc>
     <characteristic type="Profile">
         <parm name="ProfileName" value="AccessManagerAllowCallService" />
         <characteristic type="AccessMgr" version="15.0" >
-            <parm name="OperationMode" value="1" />
+            <parm name="OperationMode" value="0" />
             <parm name="ServiceAccessAction" value="4" />
             <parm name="ServiceIdentifier" value="=[ServiceIdentifier]" />
             <parm name="CallerPackageName" value="=[CallerPackageName]" />

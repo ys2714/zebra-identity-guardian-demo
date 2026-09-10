@@ -105,7 +105,20 @@ class IdentityGuardianClient(
             session.extras?.getString(IdentityGuardianContract.KEY_RESULT)
         }
 
-        // An absent or empty payload means nobody is signed in right now.
+        // Some versions say so in the payload rather than by throwing.
+        if (rawJson?.contains(IdentityGuardianContract.RESULT_UNAUTHORIZED, ignoreCase = true) == true) {
+            throw IdentityGuardianException(
+                message = "Identity Guardian rejected the session query: $rawJson",
+                hint = AUTHORIZATION_HINT,
+                needsAuthorization = true,
+            )
+        }
+
+        // An absent or empty payload usually means nobody is signed in - but
+        // Identity Guardian answers a query it has *not* authorized the same way,
+        // with an empty cursor and no payload at all. The two are
+        // indistinguishable here, so the caller has to resolve it; see
+        // UserSession.isEmpty and MainViewModel.start().
         if (rawJson.isNullOrBlank()) {
             return@runProviderCall UserSession(fields = emptyList(), rawJson = "")
         }

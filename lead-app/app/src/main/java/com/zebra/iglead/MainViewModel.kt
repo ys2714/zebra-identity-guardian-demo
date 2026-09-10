@@ -160,6 +160,15 @@ class MainViewModel(
     /** The run filling the form, so a retry cannot start a second one. */
     private var sessionJob: Job? = null
 
+    /**
+     * Whether the MX/ZDM grant has been tried in this process.
+     *
+     * Guards the one speculative attempt made to resolve an empty session read,
+     * so a device where nobody is signed in pays for it once rather than on
+     * every refresh.
+     */
+    private var hasAttemptedAuthorization = false
+
     init {
         start()
     }
@@ -193,10 +202,22 @@ class MainViewModel(
             // Anything other than "you have no delegation scope" is a failure
             // the MX/ZDM work would not fix, so don't spend time on it.
             val refused = session.exceptionOrNull()?.needsAuthorization() == true
-            if (!refused) {
+
+            // An empty answer is ambiguous: Identity Guardian returns nothing at
+            // all both when nobody is signed in and when it has not authorized
+            // the caller. Taking it at face value is how this app came up saying
+            // "no active session" on a device that was actually refusing it, and
+            // never even tried to get the scope. Resolve it once, by authorizing
+            // and asking again - after that an empty answer is the real thing.
+            val ambiguous = !hasAttemptedAuthorization &&
+                session.getOrNull()?.isEmpty == true
+
+            if (!refused && !ambiguous) {
                 apply(session)
                 return@launch
             }
+
+            hasAttemptedAuthorization = true
 
             _uiState.update { it.copy(authorization = AuthorizationState.InProgress) }
 

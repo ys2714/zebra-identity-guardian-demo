@@ -22,6 +22,9 @@ import kotlinx.coroutines.CancellationException
  * - https://techdocs.zebra.com/identityguardian/3-1/api/
  * - https://techdocs.zebra.com/mx/accessmgr/
  */
+/** Neither step got this app a delegation scope. */
+class AuthorizationException(message: String) : Exception(message)
+
 class IdentityGuardianAuthorizer(
     private val accessManager: AccessManager,
     private val delegation: ZdmDelegation,
@@ -32,28 +35,52 @@ class IdentityGuardianAuthorizer(
     /**
      * Authorizes this app for every Identity Guardian API the demo calls.
      *
-     * Both steps are idempotent, so this is safe to run on every launch.
+     * The two steps are attempted independently, and that matters. Identity
+     * Guardian checks step 2 - the ZDM delegation - so skipping it because step
+     * 1 reported a problem throws away the only step that records anything. Step
+     * 1 can fail for reasons that say nothing about whether step 2 will work: an
+     * administrator may have staged the same AccessMgr profile already, or the
+     * device's MX framework service may be refusing to answer submissions at
+     * all, which is a device fault rather than a verdict on this app.
+     *
+     * Succeeds if any scope came back with a token, since one landed scope is
+     * enough for the API that needs it.
+     *
+     * Both steps are idempotent, so this is safe to run more than once.
      */
-    suspend fun authorize(): Result<Unit> = try {
-        // The StageNow walkthrough repeats an AccessMgr profile per API URI; one
-        // profile with all of them in ServiceIdentifier does the same in a pass.
-        accessManager.allowCallService(serviceIdentifiers)
+    suspend fun authorize(): Result<Unit> {
+        val failures = mutableListOf<String>()
 
-        // ZDM issues a token per scope, so this part is per URI. The token itself
-        // is only needed by intent-based Zebra APIs - Identity Guardian reads the
-        // delegation from ZDM - but acquiring it is what creates the delegation.
-        serviceIdentifiers.forEach { serviceIdentifier ->
-            delegation.acquireToken(serviceIdentifier)
+        // Step 1, best-effort: allow this package + signature to call the
+        // services named by the URIs. The StageNow walkthrough repeats a profile
+        // per API URI; one profile with all of them does the same in a pass.
+        try {
+            accessManager.allowCallService(serviceIdentifiers)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            failures += e.message ?: e::class.java.simpleName
         }
 
-        Result.success(Unit)
-    } catch (e: CancellationException) {
-        // The caller's scope is going away; that is not an authorization failure.
-        throw e
-    } catch (e: Exception) {
-        // Anything EMDK, MX or ZDM throws is reported in the UI rather than
-        // crashing; the APIs may still work from an admin-staged allowlist.
-        Result.failure(e)
+        // Step 2, always attempted: ZDM issues a token per scope, and acquiring
+        // it is what creates the delegation Identity Guardian goes looking for.
+        var granted = false
+        serviceIdentifiers.forEach { serviceIdentifier ->
+            try {
+                delegation.acquireToken(serviceIdentifier)
+                granted = true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failures += e.message ?: e::class.java.simpleName
+            }
+        }
+
+        return if (granted) {
+            Result.success(Unit)
+        } else {
+            Result.failure(AuthorizationException(failures.joinToString(" / ")))
+        }
     }
 
     /** Releases the EMDK session held for applying the profile. */

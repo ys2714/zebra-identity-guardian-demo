@@ -37,9 +37,20 @@ internal fun Throwable.needsAuthorization(): Boolean =
 data class AuthenticationResult(
     val state: AuthenticationState?,
     val rawResult: String,
+    /** Identity Guardian's own explanation, when its answer carried one. */
+    val message: String? = null,
 ) {
     /** True when Identity Guardian reported [AuthenticationState.SUCCESS]. */
     val isSuccess: Boolean get() = state == AuthenticationState.SUCCESS
+
+    companion object {
+        /** Reads a `RESULT` payload, in either the JSON or the bare-string shape. */
+        fun parse(rawResult: String): AuthenticationResult = AuthenticationResult(
+            state = AuthenticationState.fromResult(rawResult),
+            rawResult = rawResult,
+            message = AuthenticationState.messageOf(rawResult),
+        )
+    }
 }
 
 /**
@@ -96,10 +107,7 @@ class IdentityGuardianClient(
             )
         }
 
-        AuthenticationResult(
-            state = AuthenticationState.fromResult(result),
-            rawResult = result,
-        )
+        AuthenticationResult.parse(result)
     }
 
     /**
@@ -141,10 +149,7 @@ class IdentityGuardianClient(
             )
         }
 
-        AuthenticationResult(
-            state = AuthenticationState.fromResult(result),
-            rawResult = result,
-        )
+        AuthenticationResult.parse(result)
     }
 
     /**

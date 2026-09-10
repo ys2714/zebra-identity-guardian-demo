@@ -65,6 +65,8 @@ sealed interface AuthenticationOutcome {
     data class Reported(
         val state: AuthenticationState?,
         val rawResult: String,
+        /** Identity Guardian's own wording, when its answer carried any. */
+        val detail: String? = null,
     ) : AuthenticationOutcome
 
     /** A call itself failed; [hint] carries the suggested fix when one is known. */
@@ -106,7 +108,7 @@ internal fun launchPhase(result: AuthenticationResult): AuthenticationPhase =
     when (result.state) {
         AuthenticationState.BUSY, AuthenticationState.ERROR ->
             AuthenticationPhase.Done(
-                AuthenticationOutcome.Reported(result.state, result.rawResult)
+                AuthenticationOutcome.Reported(result.state, result.rawResult, result.message)
             )
 
         else -> AuthenticationPhase.AwaitingUser
@@ -125,7 +127,7 @@ internal fun statusPhase(result: AuthenticationResult): AuthenticationPhase? = w
     result.isSuccess -> AuthenticationPhase.Done(AuthenticationOutcome.Succeeded)
 
     else -> AuthenticationPhase.Done(
-        AuthenticationOutcome.Reported(result.state, result.rawResult)
+        AuthenticationOutcome.Reported(result.state, result.rawResult, result.message)
     )
 }
 

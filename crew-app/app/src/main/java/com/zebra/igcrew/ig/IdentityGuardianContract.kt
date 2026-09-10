@@ -1,6 +1,8 @@
 package com.zebra.igcrew.ig
 
 import android.net.Uri
+import org.json.JSONException
+import org.json.JSONObject
 
 /**
  * Constants for the Identity Guardian content provider API.
@@ -126,13 +128,61 @@ enum class AuthenticationState(val value: String) {
     ERROR("ERROR");
 
     companion object {
+
+        /** Key holding the status inside a JSON-shaped `RESULT`. */
+        private const val KEY_STATUS = "status"
+
         /**
          * Matches [result] to a known state, or null when Identity Guardian
          * answered with something this app does not know about.
+         *
+         * Identity Guardian 3.1 does not answer with a bare status string. It
+         * answers with a JSON object:
+         *
+         * ```
+         * {"code":0,"message":"Authentication under process by Device lock…","status":"BUSY"}
+         * ```
+         *
+         * Comparing the whole payload against the four status words therefore
+         * matched nothing, and every answer came out as "unrecognised" with the
+         * raw JSON shown to the user. The bare form is still accepted, because
+         * that is what the older documented behaviour returns.
          */
         fun fromResult(result: String): AuthenticationState? {
+            val status = statusOf(result) ?: return null
+            return entries.firstOrNull { it.value.equals(status, ignoreCase = true) }
+        }
+
+        /**
+         * The status word out of [result], whichever shape it arrived in, or null
+         * when there is nothing usable in it.
+         */
+        fun statusOf(result: String): String? {
             val trimmed = result.trim()
-            return entries.firstOrNull { it.value.equals(trimmed, ignoreCase = true) }
+            if (!trimmed.startsWith("{")) return trimmed.takeIf { it.isNotEmpty() }
+
+            return try {
+                JSONObject(trimmed).optString(KEY_STATUS).takeIf { it.isNotBlank() }
+            } catch (e: JSONException) {
+                // Shaped like JSON but not parseable; the raw text is all there is.
+                null
+            }
+        }
+
+        /**
+         * The human-readable explanation Identity Guardian included, when it sent
+         * one. Worth showing verbatim: it says things the status word does not,
+         * such as which other lock screen is holding the device.
+         */
+        fun messageOf(result: String): String? {
+            val trimmed = result.trim()
+            if (!trimmed.startsWith("{")) return null
+
+            return try {
+                JSONObject(trimmed).optString("message").takeIf { it.isNotBlank() }
+            } catch (e: JSONException) {
+                null
+            }
         }
     }
 }

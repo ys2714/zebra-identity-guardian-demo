@@ -196,15 +196,27 @@ private fun Outcome(
     }
 }
 
-/** What Identity Guardian answered, when it answered something other than SUCCESS. */
+/**
+ * What Identity Guardian answered, when it answered something other than SUCCESS.
+ *
+ * Identity Guardian's own `message` is preferred where it sent one, because it
+ * is more specific than anything this app can say - "Authentication under
+ * process by Device lock" tells the user which lock screen is in the way, where
+ * a bare BUSY does not.
+ */
 @Composable
-private fun AuthenticationOutcome.Reported.message(): String = when (state) {
+private fun AuthenticationOutcome.Reported.message(): String = when {
+    detail != null -> detail
+
     // Neither API reports IN_PROGRESS as an outcome any more - it means the user
     // is still on the lock screen, which is AwaitingUser. Kept so that a future
     // caller of Reported cannot land here with nothing to show.
-    AuthenticationState.IN_PROGRESS -> stringResource(R.string.authentication_in_progress)
-    AuthenticationState.BUSY -> stringResource(R.string.authentication_busy)
-    AuthenticationState.ERROR -> stringResource(R.string.authentication_error)
+    state == AuthenticationState.IN_PROGRESS ->
+        stringResource(R.string.authentication_in_progress)
+
+    state == AuthenticationState.BUSY -> stringResource(R.string.authentication_busy)
+    state == AuthenticationState.ERROR -> stringResource(R.string.authentication_error)
+
     // SUCCESS never lands here; it is reported as Succeeded.
     else -> stringResource(R.string.authentication_unknown, rawResult)
 }

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Japanese strings.
+
+  Identity Guardian API names (Start Authentication, Get Authentication Status,
+  Verification 3) and the RESULT status values (IN_PROGRESS / BUSY / ERROR) are
+  left in English on purpose: they are the names an operator matches against the
+  Identity Guardian configuration screens and the Zebra documentation.
+-->
+<resources>
+    <string name="app_name">IG Crew</string>
+
+    <!-- Screen chrome -->
+    <string name="screen_title">クルー サインイン</string>
+    <string name="screen_subtitle">Identity Guardian・Start Authentication（Verification 3）</string>
+
+    <!-- Actions -->
+    <string name="action_start_authentication">認証を開始</string>
+    <string name="action_exit">終了</string>
+
+    <!-- Start Authentication / Get Authentication Status outcome -->
+    <string name="authentication_placeholder">ボタンをタップすると Verification 3 で認証します。</string>
+    <string name="authentication_calling">認証を開始しています…</string>
+    <string name="authentication_awaiting_user">Identity Guardian のロック画面で認証してください…</string>
+    <string name="authentication_success">認証に成功しました。</string>
+    <string name="authentication_in_progress">Identity Guardian が画面をロック中です（IN_PROGRESS）。</string>
+    <string name="authentication_busy">別のアプリが画面をロックしています（BUSY）。</string>
+    <string name="authentication_error">Identity Guardian がエラーを返しました（ERROR）。</string>
+    <string name="authentication_unknown">Identity Guardian の応答: %1$s</string>
+    <string name="authentication_failed">認証に失敗しました: %1$s</string>
+    <string name="authentication_hint">ヒント: %1$s</string>
+
+    <!-- MX AccessMgr + ZDM delegation scopes -->
+    <string name="authorization_in_progress">Identity Guardian の呼び出し権限を取得しています…</string>
+    <string name="authorization_authorized">Start Authentication と Get Authentication Status の呼び出し権限を取得しました。</string>
+    <string name="authorization_failed">権限の取得に失敗しました: %1$s</string>
+    <string name="authorization_retry">再試行</string>
+</resources>

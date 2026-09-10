@@ -53,6 +53,25 @@ Being a lead's tool, it also gates on the role: the roles listed in
 *not available for this role* screen instead of the form. It is a deny list, so
 any other role still gets through.
 
+## Language
+
+Both apps ship English (`values/`) and Japanese (`values-ja/`) strings and follow
+the device locale, so a device set to 日本語 comes up in Japanese with nothing to
+configure.
+
+Two things are deliberately left in English, because they are what an operator
+matches against the Identity Guardian configuration screens and the Zebra
+documentation: the API names (*Start Authentication*, *Get Authentication
+Status*, *Verification 3*) and the `RESULT` status values (`IN_PROGRESS`,
+`BUSY`, `ERROR`). Role strings are shown exactly as Identity Guardian reported
+them, since they come from the SSO provider rather than from this app.
+
+The low-level diagnostic text that EMDK, MX, ZDM and the provider itself
+produce — the part substituted into "認証に失敗しました: %1$s" and the hint
+below it — is **not** localized. Those messages originate outside these apps and
+are surfaced verbatim. The wrapper text around them is translated, so a failure
+reads as Japanese with an English technical detail.
+
 ## What both apps have to do first
 
 Identity Guardian does **not** gate its provider on an Android permission. Its

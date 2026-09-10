@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+      Width of the `Label :` column in the login form. The labels share it and
+      are right-aligned against the fields, which keeps every field starting at
+      the same column.
+
+      It is a resource because it has to hold the longest label in the current
+      language, and the Japanese ones are wider - see values-ja.
+    -->
+    <dimen name="form_label_width">96dp</dimen>
+
+</resources>

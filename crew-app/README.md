@@ -47,6 +47,14 @@ finishing, and the wait simply continues.
 the credentials themselves. Reading back *who* ended up signed in is Get Current
 User Session, which is what `lead-app` demonstrates.
 
+## Language
+
+English (`values/`) and Japanese (`values-ja/`), following the device locale. The
+Identity Guardian API names and the `RESULT` status values stay in English in
+both, since they are what an operator matches against the Identity Guardian
+configuration and the Zebra docs. Diagnostic text produced by EMDK, MX, ZDM or
+the provider is surfaced verbatim and is not translated.
+
 ## Requirements
 
 - A Zebra device with Identity Guardian (`com.zebra.mdna.els`) installed and

@@ -86,6 +86,18 @@ role at all — reaches the form, which keeps the demo working on a device whose
 Identity Guardian roles are configured differently. Add a role to lock it out;
 the blocked screen names the exact string it saw, so there is no guessing.
 
+## Language
+
+English (`values/`) and Japanese (`values-ja/`), following the device locale. The
+`Label :` column is sized by a dimension resource (`form_label_width`: 96dp in
+English, 120dp in Japanese) because full-width kana need the extra room to stay
+on one line.
+
+Role strings are never translated — they are shown exactly as Identity Guardian
+reported them, and the deny list is matched against that same value. Diagnostic
+text produced by EMDK, MX, ZDM or the provider is surfaced verbatim and is not
+translated.
+
 ## Authorizing itself as a caller
 
 Identity Guardian does **not** gate its provider on an Android permission. Its

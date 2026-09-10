@@ -17,6 +17,20 @@
 - values that came from the session are shown in red
 - Login itself is local to the demo: it checks the form is complete and reports who would be signed in
 
+## Localization
+
+- English in `values/`, Japanese in `values-ja/`; the app follows the device locale
+- the `Label :` column width is a dimension resource (`form_label_width`), because
+  full-width kana need more room than the English labels - 96dp in `values/`,
+  120dp in `values-ja/`. A new label long enough to wrap means widening that,
+  not shrinking the text
+- role strings are never translated: they are shown exactly as Identity Guardian
+  reported them, and `R.array.blocked_roles` is matched against that same value,
+  so it stays out of `values-ja/`
+- every `%1$s` must survive translation, or `stringResource` throws at runtime
+- diagnostic text coming out of EMDK / MX / ZDM / the provider is not localized;
+  only the wrapper around it is
+
 ## Reading the v2 session payload
 
 - the app queries `v2/currentsession`, whose payload is camelCase and **nested**:

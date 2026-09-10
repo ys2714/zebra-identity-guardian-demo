@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+      Wider than the English default: the longest label is `パスワード :`, and
+      full-width kana take about twice the room per character, so 96dp would
+      wrap it onto a second line.
+    -->
+    <dimen name="form_label_width">120dp</dimen>
+
+</resources>

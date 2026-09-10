@@ -20,6 +20,17 @@
 - while the lock screen is up the screen says it is waiting for the user on it,
   and reports no outcome
 
+## Localization
+
+- English in `values/`, Japanese in `values-ja/`; the app follows the device locale
+- keep the Identity Guardian API names (Start Authentication, Get Authentication
+  Status, Verification 3) and the `RESULT` values (IN_PROGRESS / BUSY / ERROR) in
+  English even in the Japanese strings - they are what an operator matches against
+  the Identity Guardian configuration and the Zebra docs
+- every `%1$s` must survive translation, or `stringResource` throws at runtime
+- diagnostic text coming out of EMDK / MX / ZDM / the provider is not localized;
+  only the wrapper around it is
+
 ## Start Authentication vs Get Authentication Status
 
 - Start Authentication returns as soon as Identity Guardian accepts the request,

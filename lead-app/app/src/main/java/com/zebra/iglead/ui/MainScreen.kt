@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -217,7 +218,10 @@ private fun FormRow(
             text = label,
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.End,
-            modifier = Modifier.width(96.dp),
+            maxLines = 1,
+            // Per-language, because the Japanese labels need more room than the
+            // English ones to stay on one line.
+            modifier = Modifier.width(dimensionResource(R.dimen.form_label_width)),
         )
         Spacer(Modifier.width(16.dp))
         Box(Modifier.weight(1f)) { content() }

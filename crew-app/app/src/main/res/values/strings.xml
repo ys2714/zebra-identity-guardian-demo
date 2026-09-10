@@ -6,23 +6,25 @@
     <string name="screen_title">Crew Sign-In</string>
     <string name="screen_subtitle">Identity Guardian · Start Authentication (Verification 3)</string>
 
-    <!-- Action -->
+    <!-- Actions -->
     <string name="action_start_authentication">Start Authentication</string>
+    <string name="action_exit">Exit</string>
 
-    <!-- Start Authentication outcome -->
+    <!-- Start Authentication / Get Authentication Status outcome -->
     <string name="authentication_placeholder">Tap the button to authenticate with Verification 3.</string>
-    <string name="authentication_calling">Calling Identity Guardian…</string>
+    <string name="authentication_calling">Starting authentication…</string>
+    <string name="authentication_awaiting_user">Authenticate on the Identity Guardian lock screen…</string>
     <string name="authentication_success">Authentication succeeded.</string>
     <string name="authentication_in_progress">Identity Guardian is still locking the screen (IN_PROGRESS).</string>
     <string name="authentication_busy">Another app has already locked the screen (BUSY).</string>
     <string name="authentication_error">Identity Guardian reported an error (ERROR).</string>
     <string name="authentication_unknown">Identity Guardian reported: %1$s</string>
-    <string name="authentication_failed">Start Authentication failed: %1$s</string>
+    <string name="authentication_failed">Authentication failed: %1$s</string>
     <string name="authentication_hint">Hint: %1$s</string>
 
-    <!-- MX AccessMgr + ZDM delegation scope -->
-    <string name="authorization_in_progress">Granting this app the Identity Guardian scope…</string>
-    <string name="authorization_authorized">Authorized for Start Authentication.</string>
+    <!-- MX AccessMgr + ZDM delegation scopes -->
+    <string name="authorization_in_progress">Granting this app the Identity Guardian scopes…</string>
+    <string name="authorization_authorized">Authorized for Start Authentication and Get Authentication Status.</string>
     <string name="authorization_failed">Authorization failed: %1$s</string>
     <string name="authorization_retry">Retry</string>
 </resources>

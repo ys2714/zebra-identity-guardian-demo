@@ -5,8 +5,9 @@ import android.net.Uri
 /**
  * Constants for the Identity Guardian content provider API.
  *
- * This app calls one API, Start Authentication, so only its URI, inputs and
- * response values are declared here.
+ * This app calls two APIs: Start Authentication puts the lock screen up, and Get
+ * Authentication Status reports how the user got on with it. Only their URIs,
+ * inputs and response values are declared here.
  *
  * Reference: https://techdocs.zebra.com/identityguardian/3-1/api/
  */
@@ -33,6 +34,21 @@ object IdentityGuardianContract {
     /** `arg` value that launches the lock screen for user verification. */
     const val API_START_AUTHENTICATION = "startauthentication"
 
+    /** `arg` value that reports the state of the lock screen action in flight. */
+    const val API_AUTHENTICATION_STATUS = "authenticationstatus"
+
+    /**
+     * Get Authentication Status. Unlike Start Authentication this one is a
+     * [android.content.ContentResolver.query], and the status comes back in the
+     * cursor's extras under [KEY_RESULT].
+     *
+     * Start Authentication answers the moment it is invoked, so its `RESULT`
+     * only says whether the lock screen was *launched*. This URI is what reports
+     * where that lock screen actually got to afterwards.
+     */
+    val AUTHENTICATION_STATUS_URI: Uri =
+        Uri.parse("content://$AUTHORITY/$METHOD_LOCK_SCREEN_ACTION/$API_AUTHENTICATION_STATUS")
+
     /** Bundle key Identity Guardian uses for every API response payload. */
     const val KEY_RESULT = "RESULT"
 
@@ -43,12 +59,13 @@ object IdentityGuardianContract {
     const val KEY_LAUNCH_FLAG = "launchflag"
 
     /**
-     * The delegation scope this app needs before Start Authentication answers.
-     * It is used both as the MX AccessMgr `ServiceIdentifier` and as the ZDM
-     * `delegation_scope`.
+     * The delegation scopes this app needs before the APIs above answer, one per
+     * API. Each is used both as the MX AccessMgr `ServiceIdentifier` and as the
+     * ZDM `delegation_scope`.
      */
     val DELEGATION_SCOPES: List<String> = listOf(
         "content://$AUTHORITY/$METHOD_LOCK_SCREEN_ACTION/$API_START_AUTHENTICATION",
+        AUTHENTICATION_STATUS_URI.toString(),
     )
 
     /**
@@ -87,8 +104,12 @@ enum class LaunchFlag(val value: String) {
 }
 
 /**
- * Status strings Identity Guardian returns in [IdentityGuardianContract.KEY_RESULT]
- * for Start Authentication.
+ * Status strings Identity Guardian returns in [IdentityGuardianContract.KEY_RESULT].
+ *
+ * Both Start Authentication and Get Authentication Status answer with these four
+ * values, but they mean different things: from Start Authentication the value
+ * describes the *launch* of the lock screen, while from Get Authentication Status
+ * it describes where that lock screen has since got to.
  */
 enum class AuthenticationState(val value: String) {
 

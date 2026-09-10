@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -24,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.zebra.igcrew.AuthenticationOutcome
+import com.zebra.igcrew.AuthenticationPhase
 import com.zebra.igcrew.AuthorizationState
 import com.zebra.igcrew.MainUiState
 import com.zebra.igcrew.R
@@ -32,14 +34,15 @@ import com.zebra.igcrew.ui.theme.IdentityGuardianCrewTheme
 import com.zebra.igcrew.ui.theme.successColor
 
 /**
- * The whole app: one button that calls Start Authentication with Verification 3,
- * and the message describing how it went.
+ * The whole app: authentication starts by itself on launch, the button re-runs
+ * it, and the message underneath describes how the last attempt went.
  */
 @Composable
 fun MainScreen(
     uiState: MainUiState,
     onStartAuthentication: () -> Unit,
     onRetryAuthorization: () -> Unit,
+    onExit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(modifier = modifier.fillMaxSize()) { innerPadding ->
@@ -68,8 +71,10 @@ fun MainScreen(
             Button(
                 onClick = onStartAuthentication,
                 // The scope has to land before the API answers, so the button
-                // waits for authorization as well as for a call in flight.
-                enabled = !uiState.isAuthenticating &&
+                // waits for authorization as well as for a call in flight. It
+                // stays live while the lock screen is up, so a user who came
+                // back without finishing can start over.
+                enabled = !uiState.isStarting &&
                     uiState.authorization !is AuthorizationState.InProgress,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -81,9 +86,25 @@ fun MainScreen(
                 )
             }
 
+            Spacer(Modifier.height(12.dp))
+
+            // Shift workers get handed the device with the app already open, so
+            // closing it has to be something the screen itself offers.
+            OutlinedButton(
+                onClick = onExit,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.action_exit),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+
             Spacer(Modifier.height(24.dp))
 
-            OutcomeMessage(uiState = uiState)
+            PhaseMessage(phase = uiState.phase)
 
             Spacer(Modifier.height(24.dp))
 
@@ -95,10 +116,13 @@ fun MainScreen(
     }
 }
 
-/** The result of the last call: the success message, or why there isn't one. */
+/**
+ * Where the attempt has got to: a spinner while this app or the lock screen is
+ * working, and the verdict once there is one.
+ */
 @Composable
-private fun OutcomeMessage(
-    uiState: MainUiState,
+private fun PhaseMessage(
+    phase: AuthenticationPhase,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -106,25 +130,39 @@ private fun OutcomeMessage(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        if (uiState.isAuthenticating) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                CircularProgressIndicator(Modifier.size(20.dp))
-                Text(stringResource(R.string.authentication_calling))
-            }
-            return@Column
-        }
-
-        when (val outcome = uiState.outcome) {
-            null -> Text(
+        when (phase) {
+            AuthenticationPhase.Idle -> Text(
                 text = stringResource(R.string.authentication_placeholder),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
 
+            AuthenticationPhase.Starting ->
+                ProgressMessage(stringResource(R.string.authentication_calling))
+
+            // The lock screen is in front of this app, so this is really only
+            // visible to a user who came back without finishing on it.
+            AuthenticationPhase.AwaitingUser ->
+                ProgressMessage(stringResource(R.string.authentication_awaiting_user))
+
+            is AuthenticationPhase.Done -> Outcome(phase.outcome)
+        }
+    }
+}
+
+/** The verdict on a finished attempt. */
+@Composable
+private fun Outcome(
+    outcome: AuthenticationOutcome,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        when (outcome) {
             AuthenticationOutcome.Succeeded -> Text(
                 text = stringResource(R.string.authentication_success),
                 style = MaterialTheme.typography.titleMedium,
@@ -161,11 +199,31 @@ private fun OutcomeMessage(
 /** What Identity Guardian answered, when it answered something other than SUCCESS. */
 @Composable
 private fun AuthenticationOutcome.Reported.message(): String = when (state) {
+    // Neither API reports IN_PROGRESS as an outcome any more - it means the user
+    // is still on the lock screen, which is AwaitingUser. Kept so that a future
+    // caller of Reported cannot land here with nothing to show.
     AuthenticationState.IN_PROGRESS -> stringResource(R.string.authentication_in_progress)
     AuthenticationState.BUSY -> stringResource(R.string.authentication_busy)
     AuthenticationState.ERROR -> stringResource(R.string.authentication_error)
     // SUCCESS never lands here; it is reported as Succeeded.
     else -> stringResource(R.string.authentication_unknown, rawResult)
+}
+
+/** A message with a spinner, for the phases that are still going. */
+@Composable
+private fun ProgressMessage(text: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        CircularProgressIndicator(Modifier.size(20.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+        )
+    }
 }
 
 /**
@@ -232,10 +290,27 @@ private fun MainScreenSuccessPreview() {
         MainScreen(
             uiState = MainUiState(
                 authorization = AuthorizationState.Authorized,
-                outcome = AuthenticationOutcome.Succeeded,
+                phase = AuthenticationPhase.Done(AuthenticationOutcome.Succeeded),
             ),
             onStartAuthentication = {},
             onRetryAuthorization = {},
+            onExit = {},
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun MainScreenAwaitingUserPreview() {
+    IdentityGuardianCrewTheme {
+        MainScreen(
+            uiState = MainUiState(
+                authorization = AuthorizationState.Authorized,
+                phase = AuthenticationPhase.AwaitingUser,
+            ),
+            onStartAuthentication = {},
+            onRetryAuthorization = {},
+            onExit = {},
         )
     }
 }
@@ -249,13 +324,16 @@ private fun MainScreenFailurePreview() {
                 authorization = AuthorizationState.Failed(
                     "EMDK is not available on this device (FAILURE)."
                 ),
-                outcome = AuthenticationOutcome.Failed(
-                    message = "Identity Guardian rejected the call: Caller is unauthorized",
-                    hint = "This app needs a ZDM delegation scope for this API URI.",
+                phase = AuthenticationPhase.Done(
+                    AuthenticationOutcome.Failed(
+                        message = "Identity Guardian rejected the call: Caller is unauthorized",
+                        hint = "This app needs a ZDM delegation scope for this API URI.",
+                    )
                 ),
             ),
             onStartAuthentication = {},
             onRetryAuthorization = {},
+            onExit = {},
         )
     }
 }

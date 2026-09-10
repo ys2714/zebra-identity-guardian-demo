@@ -15,12 +15,18 @@ Kotlin + Jetpack Compose, one screen: a login form laid out as in
 [`../lead-app-UI-layout.png`](../lead-app-UI-layout.png).
 
 - On launch the app authorizes itself (see below) and calls Get Current User
-  Session once. The session's `user_id` fills the **User** field and its
-  `user_role` fills the **Role** line; both are drawn in red to show they came
-  from Identity Guardian.
+  Session. The session's `userId` fills the **User** field and its `userRole`
+  fills the **Role** line; both are drawn in red to show they came from Identity
+  Guardian.
+- The session is read again whenever the app returns to the foreground, so a
+  crew member who authenticated in `crew-app` while this app sat in the
+  background still shows up.
 - **Password** is the one field the session does not supply.
 - **Login** is local to the demo: it checks the form is complete and reports who
   would be signed in. No credential leaves the app.
+- A role on the deny list gets a *not available for this role* screen instead of
+  the form — see [Role gate](#role-gate).
+- **Exit** closes the app and drops it from Recents.
 - Anything that goes wrong — authorization, the session read, an incomplete form
   — is reported under the button, with the provider's hint and a retry where one
   applies.
@@ -31,7 +37,54 @@ Get Current User Session uses `ContentResolver.query()`. The payload does *not*
 come back as cursor rows — it is a stringified JSON object in the cursor's
 `extras` under the `RESULT` key, which `UserSession` parses into ordered fields.
 
+### The v2 payload is camelCase and nested
+
+This matters more than it looks. The v2 API does not return the flat
+`user_id` / `user_role` pair the legacy API did:
+
+```json
+{
+  "userInformation": { "userId": "user1@zebra.com", "userRole": "Manager" },
+  "loginInformation": { "userLoginTime": "1737983880029" },
+  "eventType": "Login",
+  "userLoggedInState": "1"
+}
+```
+
+The user and the role live **inside `userInformation`**, in camelCase. Reading
+only the top level for `user_id` and `user_role` finds neither, and the form
+comes up blank with no error to explain it — the provider answered perfectly
+well, it just answered something else. `UserSession` therefore flattens the
+object into leaf values keyed by their dotted path (`userInformation.userId`)
+and matches lookups on the trailing name as well, so the v2, the legacy and the
+Proxy Mode (`userName`) spellings all resolve.
+
+`userLoggedInState` is the flag for whether anybody is signed in at all: v2
+answers the query with nobody signed in too, so a payload that parses is not by
+itself a session.
+
 See `app/src/main/java/com/zebra/iglead/ig/` for the client and the constants.
+
+## Role gate
+
+IG Lead is a lead's tool, so a session belonging to a role that is not supposed
+to have it never reaches the login form — it gets a *not available for this
+role* screen naming the role, and **Exit**.
+
+The list is a **deny list**, in
+[`app/src/main/res/values/arrays.xml`](app/src/main/res/values/arrays.xml):
+
+```xml
+<string-array name="blocked_roles">
+    <item>Parttimer</item>
+</string-array>
+```
+
+Matched against the session's `user_role` case-insensitively and ignoring
+surrounding whitespace. Any role not named there — and a session that carries no
+role at all — reaches the form, which keeps the demo working on a device whose
+Identity Guardian roles are configured differently. Add a role to lock it out;
+the blocked screen names the exact string it saw, so there is no guessing.
 
 ## Authorizing itself as a caller
 

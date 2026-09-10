@@ -18,7 +18,7 @@ class IdentityGuardianException(
 ) : Exception(message, cause)
 
 /**
- * What Start Authentication answered.
+ * What Start Authentication or Get Authentication Status answered.
  *
  * @param state the recognised status, or null when Identity Guardian returned
  * something outside [AuthenticationState].
@@ -36,8 +36,8 @@ data class AuthenticationResult(
 /**
  * Thin wrapper over the Identity Guardian content provider API.
  *
- * The call crosses into another process, so it is suspending and runs on
- * [dispatcher] rather than the main thread.
+ * Every call touches a content provider in another process, so all of them are
+ * suspending and run on [dispatcher] rather than the main thread.
  */
 class IdentityGuardianClient(
     private val contentResolver: ContentResolver,
@@ -47,6 +47,10 @@ class IdentityGuardianClient(
     /**
      * Start Authentication: asks Identity Guardian to show its lock screen so the
      * user can authenticate with [scheme].
+     *
+     * This answers as soon as Identity Guardian has taken the request, so the
+     * status it returns describes the launch of the lock screen and *not* what
+     * the user then did on it. Use [getAuthenticationStatus] for that.
      */
     suspend fun startAuthentication(
         scheme: AuthenticationScheme = AuthenticationScheme.VERIFICATION_3,
@@ -78,6 +82,49 @@ class IdentityGuardianClient(
         if (result.contains(IdentityGuardianContract.RESULT_UNAUTHORIZED, ignoreCase = true)) {
             throw IdentityGuardianException(
                 message = "Identity Guardian rejected the call: $result",
+                hint = AUTHORIZATION_HINT,
+            )
+        }
+
+        AuthenticationResult(
+            state = AuthenticationState.fromResult(result),
+            rawResult = result,
+        )
+    }
+
+    /**
+     * Get Authentication Status: reads where the lock screen Start Authentication
+     * put up has got to.
+     *
+     * This is the API that says whether the user finished authenticating, which
+     * is why the screen calls it once the lock screen is out of the way instead
+     * of believing what Start Authentication returned.
+     *
+     * The status arrives in the cursor's extras rather than as cursor rows, which
+     * is why the cursor itself is never iterated.
+     */
+    suspend fun getAuthenticationStatus(): Result<AuthenticationResult> = runProviderCall {
+        val result = contentResolver.query(
+            IdentityGuardianContract.AUTHENTICATION_STATUS_URI,
+            /* projection = */ null,
+            /* selection = */ null,
+            /* selectionArgs = */ null,
+            /* sortOrder = */ null,
+        ).use { cursor ->
+            val status = cursor ?: throw IdentityGuardianException(
+                message = "Identity Guardian did not return a cursor for the status query.",
+                hint = AUTHORIZATION_HINT,
+            )
+            status.extras?.getString(IdentityGuardianContract.KEY_RESULT)
+        } ?: throw IdentityGuardianException(
+            message = "Status query did not contain a \"${IdentityGuardianContract.KEY_RESULT}\" value.",
+        )
+
+        // As with Start Authentication, a missing delegation scope comes back as
+        // a plain status string rather than a SecurityException.
+        if (result.contains(IdentityGuardianContract.RESULT_UNAUTHORIZED, ignoreCase = true)) {
+            throw IdentityGuardianException(
+                message = "Identity Guardian rejected the status query: $result",
                 hint = AUTHORIZATION_HINT,
             )
         }

@@ -18,6 +18,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.zebra.iglead.AccessState
 import com.zebra.iglead.AuthorizationState
 import com.zebra.iglead.LoginState
 import com.zebra.iglead.MainUiState
@@ -47,6 +49,9 @@ import com.zebra.iglead.ui.theme.sessionValueColor
  *
  * Values that came from the session are drawn in red, so it is obvious at a
  * glance which parts of the form Identity Guardian supplied.
+ *
+ * A role on the deny list never gets this far — [AccessDeniedScreen] takes its
+ * place, so there is no form to type into.
  */
 @Composable
 fun MainScreen(
@@ -55,8 +60,20 @@ fun MainScreen(
     onPasswordChange: (String) -> Unit,
     onLogin: () -> Unit,
     onRetry: () -> Unit,
+    onExit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val access = uiState.access
+    if (access is AccessState.Denied) {
+        AccessDeniedScreen(
+            role = access.role,
+            userId = uiState.userId,
+            onExit = onExit,
+            modifier = modifier,
+        )
+        return
+    }
+
     Scaffold(modifier = modifier.fillMaxSize()) { innerPadding ->
         Column(
             modifier = Modifier
@@ -100,6 +117,15 @@ fun MainScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
             ) {
+                OutlinedButton(onClick = onExit) {
+                    Text(
+                        text = stringResource(R.string.action_exit),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+
+                Spacer(Modifier.width(12.dp))
+
                 Button(
                     onClick = onLogin,
                     enabled = uiState.sessionStatus !is SessionStatus.Loading,
@@ -114,6 +140,61 @@ fun MainScreen(
             Spacer(Modifier.height(24.dp))
 
             StatusArea(uiState = uiState, onRetry = onRetry)
+        }
+    }
+}
+
+/**
+ * What a blocked role sees instead of the login form.
+ *
+ * The role is named, because on a device whose Identity Guardian roles are spelled
+ * differently the fix is to put that exact string into `R.array.blocked_roles` -
+ * or take it out.
+ */
+@Composable
+private fun AccessDeniedScreen(
+    role: String,
+    userId: String,
+    onExit: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Scaffold(modifier = modifier.fillMaxSize()) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = 24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = stringResource(R.string.access_denied_title),
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            Text(
+                text = stringResource(R.string.access_denied_detail, role),
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
+            )
+
+            if (userId.isNotBlank()) {
+                Spacer(Modifier.height(8.dp))
+                StatusText(stringResource(R.string.access_denied_user, userId))
+            }
+
+            Spacer(Modifier.height(32.dp))
+
+            Button(onClick = onExit) {
+                Text(
+                    text = stringResource(R.string.action_exit),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
         }
     }
 }
@@ -302,11 +383,34 @@ private fun MainScreenSessionPreview() {
                 role = "Manager",
                 sessionStatus = SessionStatus.Loaded,
                 authorization = AuthorizationState.Authorized,
+                access = AccessState.Granted,
             ),
             onUserIdChange = {},
             onPasswordChange = {},
             onLogin = {},
             onRetry = {},
+            onExit = {},
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun MainScreenAccessDeniedPreview() {
+    IdentityGuardianLeadTheme {
+        MainScreen(
+            uiState = MainUiState(
+                userId = "ptanaka",
+                role = "Parttimer",
+                sessionStatus = SessionStatus.Loaded,
+                authorization = AuthorizationState.Authorized,
+                access = AccessState.Denied("Parttimer"),
+            ),
+            onUserIdChange = {},
+            onPasswordChange = {},
+            onLogin = {},
+            onRetry = {},
+            onExit = {},
         )
     }
 }
@@ -330,6 +434,7 @@ private fun MainScreenFailurePreview() {
             onPasswordChange = {},
             onLogin = {},
             onRetry = {},
+            onExit = {},
         )
     }
 }

@@ -12,10 +12,34 @@
 
 ## UI
 
-- login form, laid out as in `../lead-app-UI-layout.png`: `User :` text field, `Password :` text field, `Role :` text, `Login` button
-- the only Identity Guardian API used is Get Current User Session; it runs on start-up and fills in User and Role
+- login form, laid out as in `../lead-app-UI-layout.png`: `User :` text field, `Password :` text field, `Role :` text, `Login` button, plus an `Exit` button that closes the app
+- the only Identity Guardian API used is Get Current User Session; it runs on start-up **and again whenever the app returns to the foreground**, so a user who signed in through IG Crew while this app was backgrounded still shows up
 - values that came from the session are shown in red
 - Login itself is local to the demo: it checks the form is complete and reports who would be signed in
+
+## Reading the v2 session payload
+
+- the app queries `v2/currentsession`, whose payload is camelCase and **nested**:
+  the user and role are `userId` / `userRole` inside `userInformation`, not
+  `user_id` / `user_role` at the top level. Looking only at the top level is why
+  User and Role once came up blank
+- parsing flattens the object into leaf values keyed by dotted path, and lookups
+  match on the trailing name too, so both the v2 and the legacy spellings work
+- `userLoggedInState` is what says whether anybody is signed in — v2 answers the
+  query even when nobody is, so a payload that parses is not by itself a session
+
+## Role gate
+
+- this is a lead's app, so a session whose role is not supposed to have it gets a
+  "not available for this role" screen instead of the login form
+- it is a **deny list**, in `R.array.blocked_roles` (ships with `Parttimer`),
+  matched against `user_role` case-insensitively and ignoring padding. Any role
+  not named there — and a session carrying no role — reaches the form, so the demo
+  still works on a device whose roles are configured differently
+- the blocked screen names the role, so it is obvious what to add to or remove
+  from that array
+- the gate is enforced in the view model's `login()` as well, not only by hiding
+  the form
 
 ## Allow Caller to Call Service
 

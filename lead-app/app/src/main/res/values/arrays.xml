@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!--
+      Identity Guardian roles that are refused this app.
+
+      Matched against the session's user_role, case-insensitively and ignoring
+      surrounding whitespace. This is a deny list: any role not named here - and
+      a session that carries no role at all - reaches the login form, so the demo
+      still works on a device whose roles are configured differently. Add a role
+      here to lock it out.
+    -->
+    <string-array name="blocked_roles">
+        <item>Parttimer</item>
+    </string-array>
+
+</resources>

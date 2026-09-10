@@ -50,6 +50,44 @@ sealed interface SessionStatus {
     data class Failed(val message: String, val hint: String? = null) : SessionStatus
 }
 
+/**
+ * Whether the Identity Guardian role is one this app is for.
+ *
+ * IG Lead is a lead's tool, so a session belonging to a role that is not
+ * supposed to have it never reaches the login form. The check is a deny list:
+ * the roles named in `R.array.blocked_roles` are turned away and every other
+ * role is let through, which keeps the demo working on a device whose roles are
+ * configured differently.
+ */
+sealed interface AccessState {
+
+    /** No verdict yet, because the session has not been read. */
+    data object Undecided : AccessState
+
+    /** The role is not one this app turns away. */
+    data object Granted : AccessState
+
+    /** [role] is on the deny list, so the login form is withheld. */
+    data class Denied(val role: String) : AccessState
+}
+
+/**
+ * Applies the deny list to [role]: anything not named in [blockedRoles] is let
+ * through, matched case-insensitively and ignoring surrounding whitespace.
+ *
+ * A session carrying no role names nobody to turn away, so it is granted.
+ */
+internal fun roleAccess(role: String, blockedRoles: List<String>): AccessState {
+    val trimmed = role.trim()
+    if (trimmed.isBlank()) return AccessState.Granted
+
+    return if (blockedRoles.any { it.trim().equals(trimmed, ignoreCase = true) }) {
+        AccessState.Denied(trimmed)
+    } else {
+        AccessState.Granted
+    }
+}
+
 /** Outcome of the last login attempt. */
 sealed interface LoginState {
 
@@ -81,27 +119,33 @@ data class MainUiState(
     val password: String = "",
     val sessionStatus: SessionStatus = SessionStatus.Loading,
     val authorization: AuthorizationState = AuthorizationState.InProgress,
+    val access: AccessState = AccessState.Undecided,
     val login: LoginState = LoginState.Idle,
 )
 
 /**
- * Fills the login form from the Identity Guardian session and validates the
- * login attempt.
+ * Fills the login form from the Identity Guardian session, decides whether the
+ * role behind that session may use this app, and validates the login attempt.
  *
- * Get Current User Session is the only provider API this screen calls, and it
- * runs once on start-up, so the form already carries the signed-in user by the
- * time it is visible.
+ * Get Current User Session is the only provider API this screen calls. It runs
+ * on start-up and again whenever the app comes back to the foreground, so the
+ * form follows whoever signed in most recently — including someone who
+ * authenticated in IG Crew while this app sat in the background.
+ *
+ * @param blockedRoles Identity Guardian roles that are refused this app,
+ * matched case-insensitively.
  */
 class MainViewModel(
     private val client: IdentityGuardianClient,
     private val authorizer: IdentityGuardianAuthorizer,
+    private val blockedRoles: List<String> = emptyList(),
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
-    /** The start-up run in flight, so a retry cannot start a second one. */
-    private var startupJob: Job? = null
+    /** The run filling the form, so a retry cannot start a second one. */
+    private var sessionJob: Job? = null
 
     init {
         start()
@@ -112,9 +156,9 @@ class MainViewModel(
      * Also exposed as the retry action after either step fails.
      */
     fun start() {
-        if (startupJob?.isActive == true) return
+        if (sessionJob?.isActive == true) return
 
-        startupJob = viewModelScope.launch {
+        sessionJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     authorization = AuthorizationState.InProgress,
@@ -137,18 +181,44 @@ class MainViewModel(
         }
     }
 
+    /**
+     * Re-reads the session without redoing the authorization.
+     *
+     * Called when the app returns to the foreground: the session may have
+     * changed while it was away, and a form still showing the previous user
+     * would also mean the role gate was judging the wrong person.
+     */
+    fun refreshSession() {
+        if (sessionJob?.isActive == true) return
+
+        sessionJob = viewModelScope.launch {
+            _uiState.update { it.copy(sessionStatus = SessionStatus.Loading) }
+            loadSession()
+        }
+    }
+
     /** Calls Get Current User Session (v2) and copies the user and role into the form. */
     private suspend fun loadSession() {
         client.getCurrentUserSession().fold(
             onSuccess = { session ->
+                val role = session.userRole.orEmpty()
+                val signedIn = session.isSignedIn
+
                 _uiState.update {
                     it.copy(
                         userId = session.userId.orEmpty(),
-                        role = session.userRole.orEmpty(),
-                        sessionStatus = if (session.isEmpty) {
-                            SessionStatus.NoSession
-                        } else {
+                        role = role,
+                        sessionStatus = if (signedIn) {
                             SessionStatus.Loaded
+                        } else {
+                            SessionStatus.NoSession
+                        },
+                        // With nobody signed in there is no role to judge, so the
+                        // gate stays open and the form reports the missing session.
+                        access = if (signedIn) {
+                            roleAccess(role, blockedRoles)
+                        } else {
+                            AccessState.Undecided
                         },
                     )
                 }
@@ -182,6 +252,10 @@ class MainViewModel(
     fun login() {
         val state = _uiState.value
 
+        // The form is not on screen for a blocked role, but the gate is what
+        // decides who signs in, so it is enforced here rather than in the UI.
+        if (state.access is AccessState.Denied) return
+
         val login = when {
             state.userId.isBlank() -> LoginState.Rejected(LoginState.Rejection.NO_USER)
             state.password.isBlank() -> LoginState.Rejected(LoginState.Rejection.PASSWORD_REQUIRED)
@@ -204,7 +278,11 @@ class MainViewModel(
     }
 
     companion object {
-        /** Builds the client and the authorizer from the application context. */
+        /**
+         * Builds the client and the authorizer from the application context, and
+         * reads the deny list out of resources so the roles this app refuses can
+         * be changed without touching the code.
+         */
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val application: Application = checkNotNull(
@@ -216,6 +294,9 @@ class MainViewModel(
                         accessManager = AccessManager(application),
                         delegation = ZdmDelegation(application.contentResolver),
                     ),
+                    blockedRoles = application.resources
+                        .getStringArray(R.array.blocked_roles)
+                        .toList(),
                 )
             }
         }

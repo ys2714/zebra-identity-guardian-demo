@@ -8,6 +8,12 @@
     <string name="label_role">Role :</string>
     <string name="value_missing">—</string>
     <string name="action_login">Login</string>
+    <string name="action_exit">Exit</string>
+
+    <!-- Role gate -->
+    <string name="access_denied_title">Not available for this role</string>
+    <string name="access_denied_detail">Identity Guardian reports role \"%1$s\", which is not allowed to use IG Lead.</string>
+    <string name="access_denied_user">Signed in as %1$s.</string>
 
     <!-- Get Current User Session -->
     <string name="session_loading">Reading the Identity Guardian session…</string>

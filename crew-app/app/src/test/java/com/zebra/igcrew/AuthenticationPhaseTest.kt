@@ -63,6 +63,15 @@ class AuthenticationPhaseTest {
         assertNull(statusPhase(resultOf(AuthenticationState.IN_PROGRESS)))
     }
 
+    // The bug this guards against: once the flow is over Identity Guardian
+    // clears the status, so re-opening the app queried it and got nothing back.
+    // That was reported as "Authentication failed: Status query did not contain
+    // a RESULT value" to a user who had signed in successfully.
+    @Test
+    fun `no status at all from the status API is not a failure`() {
+        assertNull(statusPhase(null))
+    }
+
     @Test
     fun `busy and error from the status API end the attempt`() {
         assertEquals(

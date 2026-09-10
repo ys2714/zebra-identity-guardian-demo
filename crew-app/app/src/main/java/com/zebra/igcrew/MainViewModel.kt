@@ -121,7 +121,14 @@ internal fun launchPhase(result: AuthenticationResult): AuthenticationPhase =
  * IN_PROGRESS is the one status that is not a verdict: the lock screen is still
  * up. Every other value, known or not, ends the attempt.
  */
-internal fun statusPhase(result: AuthenticationResult): AuthenticationPhase? = when {
+internal fun statusPhase(result: AuthenticationResult?): AuthenticationPhase? = when {
+    // Identity Guardian answered with no status at all, which is what it does
+    // once a flow is over and it has cleared the one it had. There is nothing
+    // to report, so the phase is left exactly as it was - showing this as a
+    // failure is what put "Status query did not contain a RESULT value" under a
+    // screen whose user had signed in perfectly well.
+    result == null -> null
+
     result.state == AuthenticationState.IN_PROGRESS -> null
 
     result.isSuccess -> AuthenticationPhase.Done(AuthenticationOutcome.Succeeded)
@@ -148,11 +155,14 @@ data class MainUiState(
  * Drives the one action of this app: authenticating the crew member with
  * Verification 3.
  *
- * That takes two APIs rather than one. Start Authentication only launches the
- * Identity Guardian lock screen and answers immediately, so its status cannot be
- * the verdict; Get Authentication Status supplies the verdict once the user is
- * done with the lock screen, which [refreshAuthenticationStatus] reads when this
- * app comes back to the foreground.
+ * That takes three APIs rather than one. Logout User clears whoever Identity
+ * Guardian still has signed in, without which it declines to show its lock
+ * screen at all. Start Authentication then launches that lock screen and answers
+ * immediately, so its status cannot be the verdict. Get Authentication Status
+ * supplies the verdict, read both when the status URI says it changed and when
+ * this app comes back to the foreground - the first because Identity Guardian
+ * may never hand the foreground back, the second as the backstop for a device
+ * that does not notify.
  */
 class MainViewModel(
     private val client: IdentityGuardianClient,
@@ -168,27 +178,50 @@ class MainViewModel(
     /** The authentication attempt in flight, so a tap cannot start a second one. */
     private var authenticationJob: Job? = null
 
-    /** Guards the automatic start, which belongs to app launch and not to a retry. */
+    /** Guards the automatic start, so only the first time in front triggers it. */
     private var hasAutoStarted = false
 
     /**
-     * Set when the app was resumed while the Start Authentication call was still
-     * in flight.
+     * Set when the app came back to the foreground while the Start Authentication
+     * call was still in flight.
      *
      * The docs have that call answering the moment the request is accepted, but
      * if a device instead keeps it open until the lock screen is done with, the
-     * resume that should trigger the status read arrives before there is a phase
-     * to resolve. Remembering it means the read still happens rather than the
-     * screen waiting for a resume that has already been and gone.
+     * foreground signal that should trigger the status read arrives before there
+     * is a phase to resolve. Remembering it means the read still happens rather
+     * than the screen waiting on a signal that has already been and gone.
      */
-    private var resumedWhileStarting = false
+    private var foregroundedWhileStarting = false
 
     init {
-        // Authentication is supposed to begin as soon as the app opens, and the
-        // delegation scope is usually already in place, so go straight at it.
-        // authorize() is the fallback for when Identity Guardian says no.
-        hasAutoStarted = true
-        startAuthentication()
+        // Watch the status URI for the whole life of the app. This is what lets
+        // an attempt reach a verdict while the app is in the background, which
+        // it now has to: Identity Guardian dismisses its lock screen to
+        // whatever the system puts next, which need not be this app.
+        observeAuthenticationStatus()
+    }
+
+    /**
+     * Called when this app's window is actually in front of the user.
+     *
+     * The first such moment is what starts authentication, and the timing is the
+     * point. Starting it from `init` - during `onCreate` - put the Identity
+     * Guardian lock screen up over a task that had not finished coming to the
+     * front, so dismissing the lock screen returned the device to the launcher
+     * instead of to this app. Waiting for the window to hold focus means this
+     * app is unambiguously what the lock screen came up over.
+     *
+     * Later calls are the user coming back, which is when a verdict may be
+     * waiting to be read.
+     */
+    fun onInForeground() {
+        if (!hasAutoStarted) {
+            hasAutoStarted = true
+            startAuthentication()
+            return
+        }
+
+        refreshAuthenticationStatus()
     }
 
     /**
@@ -226,6 +259,51 @@ class MainViewModel(
     }
 
     /**
+     * Applies the delegation scopes, but only if this app has not already tried.
+     *
+     * The MX half of it is slow and leans on a device service that can stop
+     * answering altogether, so it must not become something every call pays for.
+     * One automatic attempt is enough: it is idempotent, so a second would
+     * change nothing, and the retry button is there for a deliberate second go.
+     */
+    private suspend fun authorizeOnce() {
+        if (_uiState.value.authorization != AuthorizationState.NotAttempted) return
+        authorizeNow()
+    }
+
+    /**
+     * Runs [call], and when Identity Guardian refused it for want of a
+     * delegation scope, takes the scopes and runs it once more.
+     *
+     * Being refused is the one failure this app can fix by itself; every other
+     * one would not be helped by it, which is why the grant hangs off the
+     * refusal rather than running in front of the call.
+     */
+    private suspend fun <T> withAuthorization(call: suspend () -> Result<T>): Result<T> {
+        val first = call()
+        if (first.exceptionOrNull()?.needsAuthorization() != true) return first
+
+        authorizeOnce()
+        return call()
+    }
+
+    /**
+     * Ends the session Identity Guardian is still holding from the last run.
+     *
+     * Identity Guardian does not put its lock screen up for a user it has
+     * already authenticated, so without this the second run of the demo left the
+     * screen waiting on a lock screen that was never going to appear. Signing
+     * the previous user out is what makes authentication repeatable.
+     *
+     * Deliberately best-effort and its result deliberately ignored: on the first
+     * run there is no session to end, and a device in Proxy Mode refuses the
+     * call outright. Neither is a reason not to try authenticating.
+     */
+    private suspend fun signOutPreviousUser() {
+        withAuthorization { client.logout() }
+    }
+
+    /**
      * Brings up the Identity Guardian lock screen for [scheme] and waits for the
      * user on it.
      *
@@ -242,18 +320,12 @@ class MainViewModel(
         if (authenticationJob?.isActive == true) return
 
         authenticationJob = viewModelScope.launch {
-            resumedWhileStarting = false
+            foregroundedWhileStarting = false
             _uiState.update { it.copy(phase = AuthenticationPhase.Starting) }
 
-            var launch = client.startAuthentication(scheme, launchFlag)
+            signOutPreviousUser()
 
-            // Refused for want of a delegation scope is the one failure this app
-            // can fix, so take the scope and try once more. Every other failure
-            // would not be helped by it.
-            if (launch.exceptionOrNull()?.needsAuthorization() == true) {
-                authorizeNow()
-                launch = client.startAuthentication(scheme, launchFlag)
-            }
+            val launch = withAuthorization { client.startAuthentication(scheme, launchFlag) }
 
             val phase = launch.fold(
                 onSuccess = ::launchPhase,
@@ -270,8 +342,8 @@ class MainViewModel(
             _uiState.update { it.copy(phase = phase) }
 
             // Act on a resume that arrived too early to be acted on then.
-            if (phase is AuthenticationPhase.AwaitingUser && resumedWhileStarting) {
-                resumedWhileStarting = false
+            if (phase is AuthenticationPhase.AwaitingUser && foregroundedWhileStarting) {
+                foregroundedWhileStarting = false
                 resolveAuthenticationStatus()
             }
         }
@@ -289,11 +361,38 @@ class MainViewModel(
         // The attempt has not finished announcing itself yet; replay this once it
         // has, rather than dropping the one signal there is.
         if (_uiState.value.phase is AuthenticationPhase.Starting) {
-            resumedWhileStarting = true
+            foregroundedWhileStarting = true
             return
         }
 
-        // Nothing to resolve unless an attempt is actually waiting on the user.
+        resolveIfAwaitingUser()
+    }
+
+    /**
+     * Watches the status URI, which is how Identity Guardian is documented to
+     * report this API, and re-reads the status on every notification.
+     *
+     * Being told rather than having to ask on resume is what makes the outcome
+     * survive Identity Guardian handing the device to something other than this
+     * app: by the time the user opens it again the verdict is already in, so the
+     * screen shows what happened instead of asking a question Identity Guardian
+     * no longer has an answer to.
+     *
+     * A notification that lands mid-launch is dropped rather than replayed, and
+     * that is deliberate. Until Start Authentication has answered, the status
+     * still describes the *previous* attempt - signing the last user out changes
+     * it too - so replaying it would report their SUCCESS as this user's. There
+     * is no signal to lose: the lock screen has to change state again to reach a
+     * verdict, and that change notifies as well.
+     */
+    private fun observeAuthenticationStatus() {
+        viewModelScope.launch {
+            client.authenticationStatusChanges().collect { resolveIfAwaitingUser() }
+        }
+    }
+
+    /** Reads the status, but only when an attempt is out waiting on the user. */
+    private fun resolveIfAwaitingUser() {
         if (_uiState.value.phase !is AuthenticationPhase.AwaitingUser) return
         if (authenticationJob?.isActive == true) return
 
@@ -303,17 +402,18 @@ class MainViewModel(
     /** Reads the status and commits it when it is a verdict. */
     private suspend fun resolveAuthenticationStatus() {
         // Null means "no verdict yet", which leaves the phase untouched.
-        val resolved: AuthenticationPhase? = client.getAuthenticationStatus().fold(
-            onSuccess = ::statusPhase,
-            onFailure = { error ->
-                AuthenticationPhase.Done(
-                    AuthenticationOutcome.Failed(
-                        message = error.message ?: "Unknown error",
-                        hint = (error as? IdentityGuardianException)?.hint,
+        val resolved: AuthenticationPhase? =
+            withAuthorization { client.getAuthenticationStatus() }.fold(
+                onSuccess = ::statusPhase,
+                onFailure = { error ->
+                    AuthenticationPhase.Done(
+                        AuthenticationOutcome.Failed(
+                            message = error.message ?: "Unknown error",
+                            hint = (error as? IdentityGuardianException)?.hint,
+                        )
                     )
-                )
-            },
-        )
+                },
+            )
 
         resolved?.let { phase -> _uiState.update { it.copy(phase = phase) } }
     }

@@ -40,6 +40,15 @@ object IdentityGuardianContract {
     const val API_AUTHENTICATION_STATUS = "authenticationstatus"
 
     /**
+     * `arg` value that ends the current user's session (Logout User).
+     *
+     * Identity Guardian will not put its lock screen up for a user it has
+     * already signed in, so without this a second run of the demo has nothing
+     * to authenticate on: Start Authentication answers and no screen appears.
+     */
+    const val API_LOGOUT = "logout"
+
+    /**
      * Get Authentication Status. Unlike Start Authentication this one is a
      * [android.content.ContentResolver.query], and the status comes back in the
      * cursor's extras under [KEY_RESULT].
@@ -64,10 +73,16 @@ object IdentityGuardianContract {
      * The delegation scopes this app needs before the APIs above answer, one per
      * API. Each is used both as the MX AccessMgr `ServiceIdentifier` and as the
      * ZDM `delegation_scope`.
+     *
+     * Logout User is listed under both spellings, because the docs give its
+     * content URI as `currentsession` while it is invoked as a `lockscreenaction`
+     * like the other two: an unused scope is harmless, a missing one is not.
      */
     val DELEGATION_SCOPES: List<String> = listOf(
         "content://$AUTHORITY/$METHOD_LOCK_SCREEN_ACTION/$API_START_AUTHENTICATION",
         AUTHENTICATION_STATUS_URI.toString(),
+        "content://$AUTHORITY/$METHOD_LOCK_SCREEN_ACTION/$API_LOGOUT",
+        "content://$AUTHORITY/currentsession",
     )
 
     /**

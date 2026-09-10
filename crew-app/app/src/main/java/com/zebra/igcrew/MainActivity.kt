@@ -4,15 +4,16 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.zebra.igcrew.ui.MainScreen
 import com.zebra.igcrew.ui.theme.IdentityGuardianCrewTheme
 
 /** Single-activity host for the crew screen. */
 class MainActivity : ComponentActivity() {
+
+    private val viewModel: MainViewModel by viewModels { MainViewModel.Factory }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -20,16 +21,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             IdentityGuardianCrewTheme {
-                val viewModel: MainViewModel = viewModel(factory = MainViewModel.Factory)
                 val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
-                // The Identity Guardian lock screen covers this activity, so
-                // getting resumed is the signal that the user is done with it and
-                // Get Authentication Status has a verdict to report.
-                LifecycleResumeEffect(viewModel) {
-                    viewModel.refreshAuthenticationStatus()
-                    onPauseOrDispose { }
-                }
 
                 MainScreen(
                     uiState = uiState,
@@ -41,5 +33,24 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    /**
+     * Window focus, rather than `onResume`, is what drives the app's one action.
+     *
+     * Holding focus is the only signal that says this activity is genuinely the
+     * window in front of the user. `onResume` fires earlier - while the launch
+     * transition is still running - and authentication started from there put the
+     * Identity Guardian lock screen up over a task that had not finished coming
+     * to the front, so dismissing the lock screen dropped the user on the
+     * launcher instead of back here.
+     *
+     * The same signal covers the way back: the lock screen takes focus off this
+     * window and hands it back when it is done, which is the moment Get
+     * Authentication Status has something to say.
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) viewModel.onInForeground()
     }
 }

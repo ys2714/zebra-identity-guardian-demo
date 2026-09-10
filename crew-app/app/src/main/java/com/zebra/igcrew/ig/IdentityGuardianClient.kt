@@ -1,9 +1,14 @@
 package com.zebra.igcrew.ig
 
 import android.content.ContentResolver
+import android.database.ContentObserver
+import android.net.Uri
 import android.os.Bundle
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
 
 /**
@@ -120,8 +125,15 @@ class IdentityGuardianClient(
      *
      * The status arrives in the cursor's extras rather than as cursor rows, which
      * is why the cursor itself is never iterated.
+     *
+     * Null means Identity Guardian has no lock screen action to report on. That
+     * is what the extras look like once a flow is over and Identity Guardian has
+     * cleared the status - "nothing to say", which is emphatically not the same
+     * as the authentication having failed. Reporting it as a failure is what put
+     * `Status query did not contain a "RESULT" value` under a screen whose user
+     * had in fact signed in successfully.
      */
-    suspend fun getAuthenticationStatus(): Result<AuthenticationResult> = runProviderCall {
+    suspend fun getAuthenticationStatus(): Result<AuthenticationResult?> = runProviderCall {
         val result = contentResolver.query(
             IdentityGuardianContract.AUTHENTICATION_STATUS_URI,
             /* projection = */ null,
@@ -135,15 +147,87 @@ class IdentityGuardianClient(
                 needsAuthorization = true,
             )
             status.extras?.getString(IdentityGuardianContract.KEY_RESULT)
-        } ?: throw IdentityGuardianException(
-            message = "Status query did not contain a \"${IdentityGuardianContract.KEY_RESULT}\" value.",
-        )
+        } ?: return@runProviderCall null
 
         // As with Start Authentication, a missing delegation scope comes back as
         // a plain status string rather than a SecurityException.
         if (result.contains(IdentityGuardianContract.RESULT_UNAUTHORIZED, ignoreCase = true)) {
             throw IdentityGuardianException(
                 message = "Identity Guardian rejected the status query: $result",
+                hint = AUTHORIZATION_HINT,
+                needsAuthorization = true,
+            )
+        }
+
+        AuthenticationResult.parse(result)
+    }
+
+    /**
+     * Emits every time Identity Guardian changes the authentication status.
+     *
+     * This is the mechanism the API docs prescribe for this URI, and it is the
+     * only one that works while this app is in the background. Waiting to be
+     * resumed is not enough: Identity Guardian dismisses its lock screen to
+     * whatever the system decides comes next, which need not be this app, so an
+     * attempt whose verdict is only read on resume can be missed altogether.
+     *
+     * The flow only says *that* the status changed; the value still comes from
+     * [getAuthenticationStatus].
+     */
+    fun authenticationStatusChanges(): Flow<Unit> = callbackFlow {
+        val observer = object : ContentObserver(null) {
+            override fun onChange(selfChange: Boolean, uri: Uri?) {
+                trySend(Unit)
+            }
+        }
+
+        try {
+            contentResolver.registerContentObserver(
+                IdentityGuardianContract.AUTHENTICATION_STATUS_URI,
+                /* notifyForDescendants = */ false,
+                observer,
+            )
+        } catch (e: SecurityException) {
+            // Nothing to observe, but the resume-driven read still works, so
+            // this closes quietly rather than failing the collector.
+            close()
+            return@callbackFlow
+        } catch (e: IllegalArgumentException) {
+            // The provider (or the URI) could not be resolved at all.
+            close()
+            return@callbackFlow
+        }
+
+        awaitClose { contentResolver.unregisterContentObserver(observer) }
+    }
+
+    /**
+     * Logout User: ends the session of whoever Identity Guardian currently has
+     * signed in.
+     *
+     * Called before Start Authentication, because Identity Guardian does not put
+     * its lock screen up for a user it has already authenticated - so without
+     * this, re-running the demo produces an answer from Start Authentication and
+     * no lock screen for the user to authenticate on.
+     *
+     * The docs note this only applies while Proxy Mode is inactive, and on the
+     * first run of the day there is no session to end, so the caller treats a
+     * failure here as nothing to act on.
+     */
+    suspend fun logout(): Result<AuthenticationResult?> = runProviderCall {
+        val response: Bundle = contentResolver.call(
+            IdentityGuardianContract.BASE_URI,
+            IdentityGuardianContract.METHOD_LOCK_SCREEN_ACTION,
+            IdentityGuardianContract.API_LOGOUT,
+            /* extras = */ null,
+        ) ?: return@runProviderCall null
+
+        val result = response.getString(IdentityGuardianContract.KEY_RESULT)
+            ?: return@runProviderCall null
+
+        if (result.contains(IdentityGuardianContract.RESULT_UNAUTHORIZED, ignoreCase = true)) {
+            throw IdentityGuardianException(
+                message = "Identity Guardian rejected the logout: $result",
                 hint = AUTHORIZATION_HINT,
                 needsAuthorization = true,
             )
